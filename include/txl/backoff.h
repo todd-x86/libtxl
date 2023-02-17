@@ -1,25 +1,28 @@
 #pragma once
 
-// TODO: do we need this class?
-#include "sleep.h"
-
-namespace llio
+namespace txl
 {
+    /**
+     * Requirements for Sleep:
+     *     Sleep();
+     *     void operator()(uint64_t nanoseconds);
+     */
+    template<class Sleep>
     class scaled_backoff
     {
     private:
-        uint64_t M_time_ = 15;
-        static constexpr uint64_t M_mask_ = 0x7FFFFFF;
+        uint64_t time_ = 15;
+        static constexpr uint64_t mask_ = 0x7FFFFFF;
     public:
         void wait()
         {
-            ::llio::nanosleep(M_time_);
-            M_time_ = ((M_time_ << 1) | 1) & M_mask_;
+            Sleep()(time_);
+            time_ = ((time_ << 1) | 1) & mask_;
         }
 
         void reset()
         {
-            M_time_ = 1;
+            time_ = 1;
         }
     };
 }

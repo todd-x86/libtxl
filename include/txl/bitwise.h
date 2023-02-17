@@ -2,7 +2,7 @@
 
 #include <cstdint>
 
-namespace llio
+namespace txl
 {
     inline constexpr bool is_power_of_two(uint64_t value)
     {
