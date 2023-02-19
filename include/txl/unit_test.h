@@ -4,6 +4,8 @@
 #include <iostream>
 #include <cassert>
 
+#define _TXL_TEST_NAME(n) test_##n
+
 #define TXL_UNIT_TEST(name) struct test_##name : txl::unit_test  \
     {   \
         test_##name() = default;    \
@@ -18,7 +20,7 @@
         }   \
         void test() override;   \
     };  \
-    static test_##name test##__LINE__{txl::init_test};   \
+    static test_##name _TXL_TEST_NAME(name){txl::init_test};   \
     void test_##name::test()
 
 #define TXL_RUN_TESTS() int main()  \

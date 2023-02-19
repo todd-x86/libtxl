@@ -1,8 +1,8 @@
 #pragma once
 
-#if __cplusplus <= 201103L
-
 #include <memory>
+
+#if __cplusplus <= 201103L
 
 namespace std
 {
