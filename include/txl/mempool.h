@@ -191,7 +191,7 @@ namespace txl
         inline void release(memory_pool_handle & h);
     };
 
-    class memory_pool_handle final : detail::memory_pool_handle_base
+    class memory_pool_handle final
     {
         friend class memory_pool;
     private:

@@ -1,9 +1,7 @@
 #include <txl/mempool.h>
 #include <txl/unit_test.h>
-#include <iostream>
-#include <cassert>
 
-void test_mempool()
+TXL_UNIT_TEST(mempool)
 {
     txl::memory_pool mp(4, 256);
     auto h1 = mp.rent(32);
@@ -21,7 +19,4 @@ void test_mempool()
     assert(!h5.empty());
 }
 
-int main()
-{
-    test_mempool();
-}
+TXL_RUN_TESTS()
