@@ -6,10 +6,10 @@
 
 namespace std
 {
-    template<class T, class... _Args>
-    unique_ptr<T> make_unique(_Args && ... args)
+    template<class T, class... Args>
+    unique_ptr<T> make_unique(Args && ... args)
     {
-        return unique_ptr<T>(new T(std::forward<_Args>(args)...));
+        return unique_ptr<T>(new T(std::forward<Args>(args)...));
     }
 }
 
