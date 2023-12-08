@@ -1,5 +1,6 @@
 add_executable(test_mempool test_mempool.cpp)
 add_executable(test_one_of test_one_of.cpp)
+add_executable(test_opaque_ptr test_opaque_ptr.cpp)
 add_executable(test_resource_pool test_resource_pool.cpp)
 add_executable(test_ring_buffer test_ring_buffer.cpp)
 add_executable(test_type_info test_type_info.cpp)
