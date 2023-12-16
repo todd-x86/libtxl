@@ -4,7 +4,7 @@
 #include <iostream>
 #include <cassert>
 
-#define _TXL_TEST_NAME(n) test_##n
+#define _TXL_TEST_NAME(n) __test_##n
 
 #define TXL_UNIT_TEST(name) struct _test_##name : txl::unit_test  \
     {   \
