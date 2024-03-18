@@ -1,3 +1,4 @@
+add_executable(test_iterator_view test_iterator_view.cpp)
 add_executable(test_mempool test_mempool.cpp)
 add_executable(test_one_of test_one_of.cpp)
 add_executable(test_opaque_ptr test_opaque_ptr.cpp)
