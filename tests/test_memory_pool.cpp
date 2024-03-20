@@ -1,4 +1,4 @@
-#include <txl/mempool.h>
+#include <txl/memory_pool.h>
 #include <txl/unit_test.h>
 
 TXL_UNIT_TEST(mempool)
