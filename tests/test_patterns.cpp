@@ -62,4 +62,14 @@ TXL_UNIT_TEST(test_if_found)
     }));
 }
 
+TXL_UNIT_TEST(test_try_emplace)
+{
+    std::unordered_map<int, std::string> data{};
+
+    auto emplaced = txl::try_emplace(data, 123, [](auto &) { return "bar"; });
+    assert(emplaced);
+    emplaced = txl::try_emplace(data, 123, [](auto &) { return "blablabla"; });
+    assert(not emplaced);
+}
+
 TXL_RUN_TESTS()

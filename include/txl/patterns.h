@@ -63,4 +63,27 @@ namespace txl
 
         return false;
     }
+
+    template<class Container, class ValueOrFunc>
+    inline auto try_emplace(Container & container, typename Container::key_type const & key, ValueOrFunc value_or_func) -> bool
+    {
+        if (auto it = container.find(key); it != container.end())
+        {
+            return false;
+        }
+
+        if constexpr (std::is_same_v<ValueOrFunc, typename Container::mapped_type> or std::is_convertible_v<ValueOrFunc, typename Container::mapped_type>)
+        {
+            // Pass as value
+            auto [_, emplaced] = container.emplace(key, std::move(value_or_func));
+            return emplaced;
+        }
+        else
+        {
+            // Invoke as function
+            auto value = value_or_func(key);
+            auto [_, emplaced] = container.emplace(key, static_cast<typename Container::mapped_type &&>(std::move(value)));
+            return emplaced;
+        }
+    }
 }
