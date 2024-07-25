@@ -1,32 +1,31 @@
 #pragma once
 
-namespace txl {
-
-template<class Value>
-class ref final
+namespace txl
 {
-private:
-    Value * value_;
-public:
-    ref(Value & value)
-        : value_(&value)
+    template<class Value>
+    class ref final
     {
-    }
-    ref(Value && value)
-        : value_(&value)
+    private:
+        Value * value_;
+    public:
+        ref(Value & value)
+            : value_(&value)
+        {
+        }
+        ref(Value && value)
+            : value_(&value)
+        {
+            // Value should last long enough here
+        }
+
+        operator Value&() { return *value_; }
+        Value * operator->() { return value_; }
+        Value & operator*() { return *value_; }
+    };
+
+    template<class T>
+    inline auto make_ref(T & value) -> ref<T>
     {
-        // Value should last long enough here
+        return ref<T>{value};
     }
-
-    operator Value&() { return *value_; }
-    Value * operator->() { return value_; }
-    Value & operator*() { return *value_; }
-};
-
-template<class T>
-inline auto make_ref(T & value) -> ref<T>
-{
-    return ref<T>{value};
-}
-
 }
