@@ -41,6 +41,7 @@ namespace txl
         {
             // Confirm mask isn't corrupting memory
             assert((*get_bitmask_ptr() & mask) == 0);
+            *get_bitmask_ptr() &= PTR_MASK;
             *get_bitmask_ptr() |= mask;
         }
 
