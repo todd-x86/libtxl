@@ -2,7 +2,7 @@
 
 #include <list>
 #include <iostream>
-#include <cassert>
+#include <stdexcept>
 
 #define _TXL_TEST_NAME(n) __test_##n
 
@@ -35,12 +35,32 @@ namespace txl
 
     struct unit_test
     {
-        virtual void _begin_test() = 0;
-        virtual void _end_test()
+        struct assertion_error final : std::runtime_error
         {
-            std::cout << "passed" << std::endl;
+            using std::runtime_error::runtime_error;
+        };
+
+        virtual void _begin_test() = 0;
+        virtual void _end_test(bool success)
+        {
+            if (success)
+            {
+                std::cout << "passed" << std::endl;
+            }
+            else
+            {
+                std::cout << "failed" << std::endl;
+            }
         }
         virtual void _test() = 0;
+
+        static void assert(bool value)
+        {
+            if (not value)
+            {
+                throw assertion_error("assertion failed");
+            }
+        }
     };
 
     static std::list<unit_test *> __tests;
@@ -55,8 +75,19 @@ namespace txl
         for (auto & test : __tests)
         {
             test->_begin_test();
-            test->_test();
-            test->_end_test();
+            try
+            {
+                test->_test();
+                test->_end_test(true);
+            }
+            catch (unit_test::assertion_error const & err)
+            {
+                test->_end_test(false);
+            }
+            catch (...)
+            {
+                test->_end_test(false);
+            }
         }
     }
 }
