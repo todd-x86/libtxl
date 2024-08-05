@@ -1,5 +1,7 @@
 add_executable(test_backoff test_backoff.cpp)
 add_test(NAME test_backoff COMMAND test_backoff)
+add_executable(test_bitwise test_bitwise.cpp)
+add_test(NAME test_bitwise COMMAND test_bitwise)
 add_executable(test_is_one_of test_is_one_of.cpp)
 add_test(NAME test_is_one_of COMMAND test_is_one_of)
 add_executable(test_iterator_view test_iterator_view.cpp)
