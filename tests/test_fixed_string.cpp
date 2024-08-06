@@ -1,6 +1,8 @@
 #include <txl/unit_test.h>
 #include <txl/fixed_string.h>
 
+#include <array>
+
 TXL_UNIT_TEST(fixed_string)
 {
     txl::fixed_string<16> account{};
@@ -47,6 +49,25 @@ TXL_UNIT_TEST(fixed_string)
 
     name[0] = 'B';
     assert(name == "BELLO");
+
+    txl::fixed_string<8> data{"12345678"};
+    assert(data == "12345678");
+
+    auto shakezula = std::string{"Master Shake"};
+    txl::fixed_string<20> athf{shakezula};
+    assert(athf == "Master Shake");
+
+    using cartoon_name = txl::fixed_string<14>;
+    std::array<cartoon_name, 4> aqua_teens {
+        "Shake",
+        "Frylock",
+        "Meatwad",
+        "Carl",
+    };
+    assert(aqua_teens[0] == "Shake");
+    assert(aqua_teens[1] == "Frylock");
+    assert(aqua_teens[2] == "Meatwad");
+    assert(aqua_teens[3] == "Carl");
 }
 
 TXL_RUN_TESTS()
