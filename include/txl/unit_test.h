@@ -2,6 +2,7 @@
 
 #include <list>
 #include <iostream>
+#include <sstream>
 #include <stdexcept>
 
 #define _TXL_TEST_NAME(n) __test_##n
@@ -25,7 +26,7 @@
 
 #define TXL_RUN_TESTS() int main()  \
     {   \
-        txl::run_tests();   \
+        return txl::run_tests();   \
     }
 
 namespace txl
@@ -35,6 +36,8 @@ namespace txl
 
     struct unit_test
     {
+        std::ostringstream error_buf_;
+
         struct assertion_error final : std::runtime_error
         {
             using std::runtime_error::runtime_error;
@@ -50,6 +53,12 @@ namespace txl
             else
             {
                 std::cout << "failed" << std::endl;
+                auto err = error_buf_.str();
+                if (not err.empty())
+                {
+                    std::cout << " - ERROR: " << err << std::endl;
+                    error_buf_.str("");
+                }
             }
         }
         virtual void _test() = 0;
@@ -58,6 +67,16 @@ namespace txl
         {
             if (not value)
             {
+                throw assertion_error("assertion failed");
+            }
+        }
+
+        template<class ExpectedValue, class ActualValue>
+        void assert_equal(ExpectedValue const & expected, ActualValue const & actual)
+        {
+            if (not (expected == static_cast<ExpectedValue const &>(actual)))
+            {
+                error_buf_ << "assert_equal: " << expected << " (expected) != " << actual << " (actual)";
                 throw assertion_error("assertion failed");
             }
         }
@@ -70,8 +89,10 @@ namespace txl
         __tests.emplace_back(test);
     }
 
-    static void run_tests()
+    static auto run_tests() -> int
     {
+        auto exit_code = 0;
+
         for (auto & test : __tests)
         {
             test->_begin_test();
@@ -82,12 +103,16 @@ namespace txl
             }
             catch (unit_test::assertion_error const & err)
             {
+                exit_code = 1;
                 test->_end_test(false);
             }
             catch (...)
             {
+                exit_code = 1;
                 test->_end_test(false);
             }
         }
+
+        return exit_code;
     }
 }

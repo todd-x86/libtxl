@@ -13,6 +13,11 @@ struct sleep_counter
         total_nanos_ += nanos;
         ++num_sleeps_;
     }
+
+    static auto reset_nanos()
+    {
+        total_nanos_ = 0;
+    }
 };
 
 uint64_t sleep_counter::total_nanos_ = 0;
@@ -23,21 +28,24 @@ TXL_UNIT_TEST(backoff)
     txl::scaled_backoff<sleep_counter> backoff{};
 
     backoff.wait();
-    assert(sleep_counter::num_sleeps_ == 1);
-    assert(sleep_counter::total_nanos_ == 15);
+    assert_equal(sleep_counter::num_sleeps_, 1);
+    assert_equal(sleep_counter::total_nanos_, 15);
+    sleep_counter::reset_nanos();
 
     backoff.wait();
-    assert(sleep_counter::num_sleeps_ == 2);
-    assert(sleep_counter::total_nanos_ == (15) + (15 << 1));
+    assert_equal(sleep_counter::num_sleeps_, 2);
+    assert_equal(sleep_counter::total_nanos_, (15 << 1) + 1);
+    sleep_counter::reset_nanos();
     
     backoff.wait();
-    assert(sleep_counter::num_sleeps_ == 3);
-    assert(sleep_counter::total_nanos_ == (15) + (15 << 1) + (15 << 2));
+    assert_equal(sleep_counter::num_sleeps_, 3);
+    assert_equal(sleep_counter::total_nanos_, (((15 << 1) + 1) << 1) + 1);
+    sleep_counter::reset_nanos();
     
     backoff.reset();
     backoff.wait();
-    assert(sleep_counter::num_sleeps_ == 4);
-    assert(sleep_counter::total_nanos_ == (15) + (15 << 1) + (15 << 2) + (15));
+    assert_equal(sleep_counter::num_sleeps_, 4);
+    assert_equal(sleep_counter::total_nanos_, 15);
 }
 
 TXL_RUN_TESTS()

@@ -1,5 +1,9 @@
 #pragma once
 
+#include <cstdlib>
+#include <cstring>
+#include <algorithm>
+
 namespace txl
 {
     template<size_t Size, class Char = char>
@@ -7,11 +11,13 @@ namespace txl
     {
     private:
         Char data_[Size];
+    protected:
+        auto data() -> Char * { return data_; }
     public:
         using iterator = Char *;
         using const_iterator = Char const *;
 
-        auto data() const -> Char { return data_; }
+        auto data() const -> Char const * { return data_; }
 
         iterator begin()
         {
@@ -55,9 +61,79 @@ namespace txl
     public:
         using fixed_string_base<Size + 1, Char>::fixed_string_base;
 
+        auto copy_from(char const * str)
+        {
+            copy_from(std::string_view{str});
+        }
+        
+        auto copy_from(std::string const & str)
+        {
+            copy_from(std::string_view{str});
+        }
+
+        template<size_t OtherSize>
+        auto copy_from(fixed_string<OtherSize, Char> const & str)
+        {
+            copy_from(str.to_string_view());
+        }
+        
+        auto copy_from(std::string_view str)
+        {
+            auto bytes_to_copy = std::min(str.size(), this->capacity()-1);
+            std::copy(str.data(), std::next(str.data(), bytes_to_copy), this->data());
+            if (bytes_to_copy < this->capacity()-1)
+            {
+                (*this)[bytes_to_copy] = '\0';
+            }
+        }
+
+        auto to_string_view() const -> std::string_view
+        {
+            return {this->data(), size()};
+        }
+
         auto size() const -> size_t
         {
-            return std::strlen(data());
+            return std::strlen(this->data());
+        }
+
+        template<class String>
+        auto operator=(String const & str) -> fixed_string &
+        {
+            copy_from(str);
+            return *this;
+        }
+
+        template<size_t OtherSize>
+        auto operator==(fixed_string<OtherSize, Char> const & str) const -> bool
+        {
+            return to_string_view() == str.to_string_view();
+        }
+        
+        template<size_t OtherSize>
+        auto operator!=(fixed_string<OtherSize, Char> const & str) const -> bool
+        {
+            return not (*this == str);
+        }
+
+        auto operator==(char const * str) const -> bool
+        {
+            return std::string_view{str} == to_string_view();
+        }
+        
+        auto operator!=(char const * str) const -> bool
+        {
+            return not (*this == str);
+        }
+        
+        auto operator==(std::string_view str) const -> bool
+        {
+            return str == to_string_view();
+        }
+        
+        auto operator!=(std::string_view str) const -> bool
+        {
+            return not (*this == str);
         }
     };
 
@@ -71,12 +147,13 @@ namespace txl
         
         auto size() const -> size_t
         {
-            if ((*this)[capacity()-1] == 0)
+            // If there's a null-terminator, call strlen() otherwise return capacity()
+            if ((*this)[this->capacity()-1] == static_cast<Char>(0))
             {
-                return std::strlen(data());
+                return std::strlen(this->data());
             }
 
-            return capacity();
+            return this->capacity();
         }
     };
 }

@@ -12,7 +12,7 @@ namespace txl
     {
     private:
         uint64_t time_ = 15;
-        static constexpr uint64_t mask_ = 0x7FFFFFF;
+        static constexpr uint64_t mask_ = 0x7FFFFFFFFFFFFFF;
     public:
         void wait()
         {
@@ -22,7 +22,7 @@ namespace txl
 
         void reset()
         {
-            time_ = 1;
+            time_ = 15;
         }
     };
 }
