@@ -3,6 +3,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <algorithm>
+#include <iterator>
 #include <type_traits>
 
 namespace txl
@@ -44,6 +45,18 @@ namespace txl
         {
             return Size;
         }
+        
+        auto size() const -> size_t
+        {
+            // Find distance to null terminator, otherwise just return max capacity
+            auto it = std::find(begin(), end(), static_cast<Char>(0));
+            return std::distance(begin(), it);
+        }
+
+        auto to_string_view() const -> std::basic_string_view<Char>
+        {
+            return {data(), size()};
+        }
 
         Char & operator[](size_t index)
         {
@@ -53,6 +66,28 @@ namespace txl
         Char const & operator[](size_t index) const
         {
             return data_[index];
+        }
+
+        template<size_t OtherSize>
+        auto operator==(fixed_string_base<OtherSize, Char> const & str) const -> bool
+        {
+            return to_string_view() == str.to_string_view();
+        }
+        
+        template<size_t OtherSize>
+        auto operator!=(fixed_string_base<OtherSize, Char> const & str) const -> bool
+        {
+            return not (*this == str);
+        }
+
+        auto operator==(std::basic_string_view<Char> str) const -> bool
+        {
+            return str == to_string_view();
+        }
+        
+        auto operator!=(std::basic_string_view<Char> str) const -> bool
+        {
+            return not (*this == str);
         }
     };
 
@@ -78,17 +113,17 @@ namespace txl
 
         auto clear()
         {
-            (*this)[0] = '\0';
-        }
-
-        auto copy_from(char const * str)
-        {
-            copy_from(std::string_view{str});
+            (*this)[0] = static_cast<Char>(0);
         }
         
-        auto copy_from(std::string const & str)
+        auto copy_from(Char const * str)
         {
-            copy_from(std::string_view{str});
+            copy_from(std::basic_string_view<Char>{str});
+        }
+
+        auto copy_from(std::basic_string<Char> const & str)
+        {
+            copy_from(std::basic_string_view<Char>{str});
         }
 
         template<size_t OtherSize>
@@ -97,26 +132,16 @@ namespace txl
             copy_from(str.to_string_view());
         }
         
-        auto copy_from(std::string_view str)
+        auto copy_from(std::basic_string_view<Char> str)
         {
             auto bytes_to_copy = std::min(str.size(), capacity());
             std::copy(str.data(), std::next(str.data(), bytes_to_copy), this->data());
-            (*this)[bytes_to_copy] = '\0';
-        }
-
-        auto to_string_view() const -> std::string_view
-        {
-            return {this->data(), size()};
+            (*this)[bytes_to_copy] = static_cast<Char>(0);
         }
 
         auto capacity() const -> size_t
         {
             return Size;
-        }
-
-        auto size() const -> size_t
-        {
-            return std::strlen(this->data());
         }
 
         template<class String>
@@ -140,38 +165,6 @@ namespace txl
             }
             return *this;
         }
-
-        template<size_t OtherSize>
-        auto operator==(fixed_string<OtherSize, Char> const & str) const -> bool
-        {
-            return to_string_view() == str.to_string_view();
-        }
-        
-        template<size_t OtherSize>
-        auto operator!=(fixed_string<OtherSize, Char> const & str) const -> bool
-        {
-            return not (*this == str);
-        }
-
-        auto operator==(char const * str) const -> bool
-        {
-            return std::string_view{str} == to_string_view();
-        }
-        
-        auto operator!=(char const * str) const -> bool
-        {
-            return not (*this == str);
-        }
-        
-        auto operator==(std::string_view str) const -> bool
-        {
-            return str == to_string_view();
-        }
-        
-        auto operator!=(std::string_view str) const -> bool
-        {
-            return not (*this == str);
-        }
     };
 
 
@@ -181,7 +174,7 @@ namespace txl
     public:
         // Use all block
         using fixed_string_base<Size, Char>::fixed_string_base;
-        
+
         template<class String>
         string_block(String && str)
             : string_block()
@@ -198,17 +191,17 @@ namespace txl
 
         auto clear()
         {
-            (*this)[0] = '\0';
+            (*this)[0] = static_cast<Char>(0);
         }
 
-        auto copy_from(char const * str)
+        auto copy_from(Char const * str)
         {
-            copy_from(std::string_view{str});
+            copy_from(std::basic_string_view<Char>{str});
         }
-        
-        auto copy_from(std::string const & str)
+
+        auto copy_from(std::basic_string<Char> const & str)
         {
-            copy_from(std::string_view{str});
+            copy_from(std::basic_string_view<Char>{str});
         }
 
         template<size_t OtherSize>
@@ -217,19 +210,14 @@ namespace txl
             copy_from(str.to_string_view());
         }
         
-        auto copy_from(std::string_view str)
+        auto copy_from(std::basic_string_view<Char> str)
         {
             auto bytes_to_copy = std::min(str.size(), capacity());
             std::copy(str.data(), std::next(str.data(), bytes_to_copy), this->data());
             if (bytes_to_copy < capacity())
             {
-                (*this)[bytes_to_copy] = '\0';
+                (*this)[bytes_to_copy] = static_cast<Char>(0);
             }
-        }
-
-        auto to_string_view() const -> std::string_view
-        {
-            return {this->data(), size()};
         }
 
         template<class String>
@@ -252,49 +240,6 @@ namespace txl
                 }
             }
             return *this;
-        }
-
-        template<size_t OtherSize>
-        auto operator==(string_block<OtherSize, Char> const & str) const -> bool
-        {
-            return to_string_view() == str.to_string_view();
-        }
-        
-        template<size_t OtherSize>
-        auto operator!=(string_block<OtherSize, Char> const & str) const -> bool
-        {
-            return not (*this == str);
-        }
-
-        auto operator==(char const * str) const -> bool
-        {
-            return std::string_view{str} == to_string_view();
-        }
-        
-        auto operator!=(char const * str) const -> bool
-        {
-            return not (*this == str);
-        }
-        
-        auto operator==(std::string_view str) const -> bool
-        {
-            return str == to_string_view();
-        }
-        
-        auto operator!=(std::string_view str) const -> bool
-        {
-            return not (*this == str);
-        }
-        
-        auto size() const -> size_t
-        {
-            // If there's a null-terminator, call strlen() otherwise return capacity()
-            if ((*this)[capacity()-1] == static_cast<Char>(0))
-            {
-                return std::strlen(this->data());
-            }
-
-            return capacity();
         }
 
         auto capacity() const -> size_t
