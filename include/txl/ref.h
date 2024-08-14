@@ -1,30 +1,18 @@
 #pragma once
 
+#include <functional>
+
 namespace txl
 {
-    template<class Value>
-    class ref final
+    template<class T>
+    struct ref : std::reference_wrapper<T>
     {
-    private:
-        Value * value_;
-    public:
-        ref(Value & value)
-            : value_(&value)
-        {
-        }
-        ref(Value && value)
-            : value_(&value)
-        {
-            // Value should last long enough here
-        }
-
-        operator Value&() { return *value_; }
-        Value * operator->() { return value_; }
-        Value & operator*() { return *value_; }
+        auto operator*() -> T & { return this->get(); }
+        auto operator*() const -> T const & { return this->get(); }
     };
 
     template<class T>
-    inline auto make_ref(T & value) -> ref<T>
+    auto make_ref(T & value) -> ref<T>
     {
         return ref<T>{value};
     }

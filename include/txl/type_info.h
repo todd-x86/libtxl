@@ -3,13 +3,14 @@
 #include <cstring>
 #include <ostream>
 #include <string>
+#include <string_view>
 
 namespace txl
 {
     // Compile-time type information
     struct type_info final
     {
-        char const * const name;
+        char const * const name_data;
         const size_t name_len;
         const size_t hash;
 
@@ -19,10 +20,12 @@ namespace txl
             // (names point to statically-allocated __PRETTY_FUNCTION__ macros)
             return hash == ti.hash &&
                    name_len == ti.name_len &&
-                   (name == ti.name || strncmp(name, ti.name, name_len) == 0);
+                   (name_data == ti.name_data || strncmp(name_data, ti.name_data, name_len) == 0);
         }
 
-        std::string str() const { return std::string(name, name_len); }
+        auto name() const -> std::string_view { return {name_data, name_len}; }
+
+        std::string str() const { return std::string(name_data, name_len); }
 
         inline bool operator!=(type_info const & ti) const
         {
@@ -33,7 +36,7 @@ namespace txl
     inline std::ostream & operator<<(std::ostream & os, type_info const & ti)
     {
         os << "type_info { name=\"";
-        auto n = ti.name;
+        auto n = ti.name_data;
         for (size_t i = 0; i != ti.name_len; ++i)
         {
             os.put(*n);

@@ -1,5 +1,7 @@
 #pragma once
 
+#include <txl/type_info.h>
+
 #include <list>
 #include <iostream>
 #include <sstream>
@@ -36,6 +38,12 @@ namespace txl
 
     struct unit_test
     {
+        template<class T>
+        struct test_printer final
+        {
+            T value_;
+        };
+
         std::ostringstream error_buf_;
 
         struct assertion_error final : std::runtime_error
@@ -76,11 +84,44 @@ namespace txl
         {
             if (not (expected == static_cast<ExpectedValue const &>(actual)))
             {
-                error_buf_ << "assert_equal: " << expected << " (expected) != " << actual << " (actual)";
+                error_buf_ << "assert_equal: " << test_printer{expected} << " (expected) != " << test_printer{actual} << " (actual)";
                 throw assertion_error("assertion failed");
             }
         }
     };
+    
+    namespace detail
+    {
+        template<class S, class T>
+        class is_streamable
+        {
+        private:
+            template<class SS, class TT>
+            static auto test(int) -> decltype(std::declval<SS &>() << std::declval<TT>(), std::true_type{});
+            
+            template<class, class>
+            static auto test(...) -> std::false_type;
+        public:
+            static constexpr bool value = decltype(test<S, T>(0))::value;
+        };
+
+        template<class S, class T>
+        inline constexpr bool is_streamable_v = is_streamable<S, T>{}.value;
+    }
+
+    template<class T>
+    inline auto operator<<(std::ostream & os, unit_test::test_printer<T> const & value) -> std::ostream &
+    {
+        if constexpr (detail::is_streamable_v<std::ostream, T>)
+        {
+            os << value.value_;
+        }
+        else
+        {
+            os << get_type_info<T>().name() << '<' << reinterpret_cast<void const *>(&value.value_) << '>';
+        }
+        return os;
+    }
 
     static std::list<unit_test *> __tests;
 
