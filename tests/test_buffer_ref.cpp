@@ -2,6 +2,8 @@
 #include <txl/buffer_ref.h>
 #include <txl/types.h>
 
+#include <string_view>
+
 TXL_UNIT_TEST(buffer_ref)
 {
     txl::byte_vector str_data{'H','e','l','l','o',' ','W','o','r','l','d'};
@@ -35,6 +37,15 @@ TXL_UNIT_TEST(buffer_ref)
     auto ref_8 = ref.slice(str_data.size() - 2);
     assert_equal(ref_7.size(), 2);
     assert_equal(ref_7, ref_8);
+}
+
+TXL_UNIT_TEST(to_string_view)
+{
+    auto src = std::string_view{"This is some string"};
+    auto buf = txl::buffer_ref{src};
+    auto dst = buf.to_string_view();
+
+    assert_equal(src, dst);
 }
 
 TXL_RUN_TESTS()

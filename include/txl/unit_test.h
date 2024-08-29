@@ -79,6 +79,16 @@ namespace txl
             }
         }
 
+        auto assert_true(bool value)
+        {
+            assert(value);
+        }
+
+        auto assert_false(bool value)
+        {
+            assert(not value);
+        }
+
         template<class ExpectedValue, class ActualValue>
         void assert_equal(ExpectedValue const & expected, ActualValue const & actual)
         {
@@ -87,6 +97,11 @@ namespace txl
                 error_buf_ << "assert_equal: " << test_printer{expected} << " (expected) != " << test_printer{actual} << " (actual)";
                 throw assertion_error("assertion failed");
             }
+        }
+
+        auto _set_error(std::string_view msg)
+        {
+            error_buf_ << "exception thrown: " << msg;
         }
     };
     
@@ -145,6 +160,12 @@ namespace txl
             catch (unit_test::assertion_error const & err)
             {
                 exit_code = 1;
+                test->_end_test(false);
+            }
+            catch (std::exception const & ex)
+            {
+                exit_code = 1;
+                test->_set_error(ex.what());
                 test->_end_test(false);
             }
             catch (...)
