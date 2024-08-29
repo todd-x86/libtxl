@@ -16,8 +16,6 @@ namespace txl
         // Returns buffer read
         virtual auto read_impl(buffer_ref & buf, on_error::callback<system_error> on_err) -> buffer_ref = 0;
     public:
-        static constexpr const size_t READ_BUFFER_SIZE = 4096;
-
         auto read(buffer_ref & buf, on_error::callback<system_error> on_err = on_error::throw_on_error{}) -> buffer_ref
         {
             return read_impl(buf, on_err);
@@ -30,9 +28,8 @@ namespace txl
 
         auto read(std::ostream & dst, size_t size, on_error::callback<system_error> on_err = on_error::throw_on_error{}) -> size_t
         {
-            byte_array<READ_BUFFER_SIZE> buf{};
-
-            auto rd_buf = buffer_ref{buf};
+            char buf[size];
+            auto rd_buf = buffer_ref{buf, size};
 
             size_t total_read = 0;
             while (total_read < size)

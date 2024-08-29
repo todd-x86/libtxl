@@ -27,8 +27,9 @@ namespace txl
         {
         }
 
-        buffer_ref(char const * s)
-            : buffer_ref(std::string_view{s})
+        template<size_t Size>
+        buffer_ref(char (&s)[Size])
+            : buffer_ref(reinterpret_cast<void *>(&s[0]), Size)
         {
         }
 
