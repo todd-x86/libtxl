@@ -1,7 +1,7 @@
 #pragma once
 
 #include <txl/buffer_ref.h>
-#include <txl/file.h>
+#include <txl/io.h>
 #include <txl/on_error.h>
 #include <txl/system_error.h>
 
@@ -10,7 +10,7 @@
 
 namespace txl
 {
-    auto copy(file & src, std::ostream & dst, buffer_ref copy_buf, size_t bytes_to_read, on_error::callback<system_error> on_err = on_error::throw_on_error{}) -> size_t
+    auto copy(reader & src, std::ostream & dst, buffer_ref copy_buf, size_t bytes_to_read, on_error::callback<system_error> on_err = on_error::throw_on_error{}) -> size_t
     {
         size_t total_read = 0;
         while (total_read < bytes_to_read)
@@ -28,7 +28,7 @@ namespace txl
         return total_read;
     }
     
-    auto copy(file & src, std::ostream & dst, buffer_ref copy_buf, on_error::callback<system_error> on_err = on_error::throw_on_error{}) -> size_t
+    auto copy(reader & src, std::ostream & dst, buffer_ref copy_buf, on_error::callback<system_error> on_err = on_error::throw_on_error{}) -> size_t
     {
         return copy(src, dst, copy_buf, copy_buf.size(), on_err);
     }
