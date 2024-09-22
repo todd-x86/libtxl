@@ -1,6 +1,8 @@
 #include <txl/unit_test.h>
+#include <txl/copy.h>
 #include <txl/file.h>
 #include <txl/on_error.h>
+#include <txl/types.h>
 
 #include <sstream>
 #include <array>
@@ -43,10 +45,11 @@ TXL_UNIT_TEST(file_append)
     {
         auto f = txl::file{"sample3.txt", "a+"};
 
-        std::stringstream buf{};
-        auto bytes_read = f.read(buf, 512);
+        auto dst = std::stringstream{};
+        auto buf = txl::byte_array<512>{};
+        auto bytes_read = txl::copy(f, dst, buf);
         assert_equal(bytes_read, std::string_view{"This is a test for you"}.length());
-        assert_equal(buf.str(), "This is a test for you");
+        assert_equal(dst.str(), "This is a test for you");
     }
 }
 
@@ -63,16 +66,17 @@ TXL_UNIT_TEST(file_read_buffer)
     {
         auto f = txl::file{"sample3.txt", "a+"};
 
-        std::stringstream buf{};
+        auto dst = std::stringstream{};
+        auto buf = txl::byte_array<1>{};
         while (true)
         {
-            auto bytes_read = f.read(buf, 1);
+            auto bytes_read = txl::copy(f, dst, buf);
             if (bytes_read == 0)
             {
                 break;
             }
         }
-        assert_equal(buf.str(), "This is a test");
+        assert_equal(dst.str(), "This is a test");
     }
 }
 
