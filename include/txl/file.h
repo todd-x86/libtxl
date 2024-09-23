@@ -5,6 +5,7 @@
 #include <txl/result.h>
 #include <txl/system_error.h>
 #include <txl/on_error.h>
+#include <txl/handle_error.h>
 
 #include <string_view>
 #include <algorithm>
@@ -51,26 +52,24 @@ namespace txl
             return 0;
         }
 
-        auto read_impl(buffer_ref & buf, on_error::callback<system_error> on_err) -> buffer_ref
+        auto read_impl(buffer_ref buf, on_error::callback<system_error> on_err) -> buffer_ref
         {
             auto bytes_read = ::read(fd_, buf.data(), buf.size());
-            if (bytes_read == -1)
+            if (handle_system_error(bytes_read, on_err))
             {
-                on_err(get_system_error());
-                return {};
+                return buf.slice(0, bytes_read);
             }
-            return buf.slice(0, bytes_read);
+            return {};
         }
 
-        auto write_impl(buffer_ref & buf, on_error::callback<system_error> on_err) -> buffer_ref
+        auto write_impl(buffer_ref buf, on_error::callback<system_error> on_err) -> buffer_ref
         {
             auto bytes_written = ::write(fd_, buf.data(), buf.size());
-            if (bytes_written == -1)
+            if (handle_system_error(bytes_written, on_err))
             {
-                on_err(get_system_error());
-                return {};
+                return buf.slice(0, bytes_written);
             }
-            return buf.slice(0, bytes_written);
+            return {};
         }
     public:
         file() = default;
@@ -106,10 +105,7 @@ namespace txl
             auto file_mode = get_file_mode(mode, on_err);
 
             fd_ = ::open(filename.data(), file_mode, DEFAULT_FILE_PERMS);
-            if (fd_ == -1)
-            {
-                on_err(get_system_error());
-            }
+            handle_system_error(fd_, on_err);
         }
 
         auto is_open() const -> bool { return fd_ != -1; }
@@ -117,12 +113,10 @@ namespace txl
         auto close(on_error::callback<system_error> on_err = on_error::throw_on_error{}) -> void
         {
             auto res = ::close(fd_);
-            if (res == -1)
+            if (handle_system_error(res, on_err))
             {
-                on_err(get_system_error());
-                return;
+                fd_ = -1;
             }
-            fd_ = -1;
         }
     };
 }

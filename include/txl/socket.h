@@ -1,35 +1,63 @@
 #pragma once
 
 #include <txl/buffer_ref.h>
+#include <txl/io.h>
+#include <txl/on_error.h>
+#include <txl/handle_error.h>
+#include <txl/system_error.h>
+
+#include <algorithm>
 
 namespace txl
 {
-    class socket_result
+    class socket : public reader
+                 , public writer
     {
     private:
-        int error_ = 0;
-        size_t num_bytes_ = 0;
-    public:
-        socket_result() = default;
-        socket_result(int err, size_t num_bytes)
-            : error_(err)
-            , num_bytes_(num_bytes)
+        int fd_ = -1;
+    protected:
+        auto read_impl(buffer_ref buf, on_error::callback<system_error> on_err) override -> buffer_ref
         {
+            auto res = ::recv(fd_, buf.data(), buf.size(), 0);
+            if (handle_system_error(res, on_err))
+            {
+                return buf.slice(0, res);
+            }
+            return {};
         }
 
-        auto error_code() const -> int { return error_; }
-        auto count() const -> size_t { return num_bytes_; }
-    };
-
-    class socket
-    {
-    private:
-        int fd_;
-    public:
-        auto write(buffer_ref buf) -> socket_result
+        auto write_impl(buffer_ref buf, on_error::callback<system_error> on_err) override -> buffer_ref
         {
-            auto bytes_written = ::write(fd_, buf.data(), buf.size());
-            return {errno, bytes_written};
+        }
+    public:
+        enum flags : int
+        {
+            none = 0,
+            non_block = MSG_DONTWAIT,
+            error_queue = MSG_ERRQUEUE,
+        };
+
+        socket() = default;
+        socket(
+        socket(socket const &) = delete;
+        socket(socket && s)
+            : socket()
+        {
+            std::swap(s.fd_, fd_);
+        }
+
+        virtual ~socket()
+        {
+            close(on_error::ignore{});
+        }
+
+        auto close(on_error::callback<system_error> on_err = on_error::throw_on_error{}) -> void
+        {
+            auto res = ::close(fd_);
+            if (handle_system_error(res, on_err))
+            {
+                fd_ = -1;
+            }
         }
     };
 }
