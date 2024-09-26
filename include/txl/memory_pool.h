@@ -75,7 +75,7 @@ namespace txl
 
         detail::mempool_chunk_header * get_page(uint32_t id)
         {
-            return reinterpret_cast<detail::mempool_chunk_header *>(reinterpret_cast<uint8_t *>(data_.data()) + (bytes_per_page_ * id));
+            return reinterpret_cast<detail::mempool_chunk_header *>(static_cast<uint8_t *>(data_.data()) + (bytes_per_page_ * id));
         }
 
         void * find_free_list_chunk(size_t size_pages)
@@ -86,7 +86,7 @@ namespace txl
                 auto p = get_page(*p_id);
                 if (p->num_pages >= size_pages)
                 {
-                    return reinterpret_cast<void *>(p);
+                    return static_cast<void *>(p);
                 }
                 p_id = &p->next_chunk;
             }
@@ -96,12 +96,12 @@ namespace txl
 
         uint32_t page_id(void const * p) const
         {
-            return (reinterpret_cast<uint8_t const *>(p) - reinterpret_cast<uint8_t const *>(data_.data())) / bytes_per_page_;
+            return (static_cast<uint8_t const *>(p) - static_cast<uint8_t const *>(data_.data())) / bytes_per_page_;
         }
 
         bool dec_ref(void * p)
         {
-            auto h = reinterpret_cast<detail::mempool_chunk_header *>(p)-1;
+            auto h = static_cast<detail::mempool_chunk_header *>(p)-1;
             if (h->type != detail::MEM_CHUNK)
             {
                 return false;
@@ -114,14 +114,14 @@ namespace txl
             {
                 h->type = detail::FREE_CHUNK;
                 h->next_chunk = free_list_;
-                free_list_ = page_id(reinterpret_cast<void const *>(h));
+                free_list_ = page_id(static_cast<void const *>(h));
             }
             return true;
         }
 
         bool inc_ref(void * p)
         {
-            auto h = reinterpret_cast<detail::mempool_chunk_header *>(p)-1;
+            auto h = static_cast<detail::mempool_chunk_header *>(p)-1;
             if (h->type != detail::MEM_CHUNK)
             {
                 return false;
@@ -135,12 +135,12 @@ namespace txl
 
         void const * end_ptr() const
         {
-            return reinterpret_cast<void const *>(reinterpret_cast<uint8_t const *>(data_.data()) + (num_pages_ * bytes_per_page_));
+            return static_cast<void const *>(static_cast<uint8_t const *>(data_.data()) + (num_pages_ * bytes_per_page_));
         }
 
         void const * next_alloc(size_t num_pages) const
         {
-            return reinterpret_cast<void const *>(reinterpret_cast<uint8_t const *>(next_alloc_) + (bytes_per_page_ * num_pages));
+            return static_cast<void const *>(static_cast<uint8_t const *>(next_alloc_) + (bytes_per_page_ * num_pages));
         }
 
         void * get_free_chunk(size_t num_bytes)
@@ -152,10 +152,10 @@ namespace txl
             auto c = find_free_list_chunk(num_pages);
             if (c)
             {
-                auto h = reinterpret_cast<detail::mempool_chunk_header *>(c);
+                auto h = static_cast<detail::mempool_chunk_header *>(c);
                 h->type = detail::MEM_CHUNK;
                 h->num_references = 1;
-                return reinterpret_cast<void *>(h + 1);
+                return static_cast<void *>(h + 1);
             }
 
             if (next_alloc(num_pages) > end_ptr())
@@ -164,12 +164,12 @@ namespace txl
                 return nullptr;
             }
 
-            auto h = reinterpret_cast<detail::mempool_chunk_header *>(next_alloc_);
+            auto h = static_cast<detail::mempool_chunk_header *>(next_alloc_);
             h->type = detail::MEM_CHUNK;
             h->num_pages = num_pages;
             h->num_references = 1;
-            next_alloc_ = reinterpret_cast<void *>(reinterpret_cast<uint8_t *>(next_alloc_) + (bytes_per_page_ * num_pages));
-            return reinterpret_cast<void *>(h + 1);
+            next_alloc_ = static_cast<void *>(static_cast<uint8_t *>(next_alloc_) + (bytes_per_page_ * num_pages));
+            return static_cast<void *>(h + 1);
         }
     public:
         memory_pool(size_t num_pages, size_t bytes_per_page)

@@ -21,20 +21,20 @@ namespace txl
             {
                 break;
             }
-	    // TODO: check dst.good()
-            dst.write(reinterpret_cast<char const *>(copy_buf.data()), buf_read.size());
+            // TODO: check dst.good()
+            dst.write(static_cast<char const *>(copy_buf.data()), buf_read.size());
             total_read += buf_read.size();
         }
 
         return total_read;
     }
     
-    auto copy(reader & src, std::ostream & dst, buffer_ref copy_buf, on_error::callback<system_error> on_err = on_error::throw_on_error{}) -> size_t
+    inline auto copy(reader & src, std::ostream & dst, buffer_ref copy_buf, on_error::callback<system_error> on_err = on_error::throw_on_error{}) -> size_t
     {
         return copy(src, dst, copy_buf, copy_buf.size(), on_err);
     }
     
-    auto copy(reader & src, std::ostream & dst, size_t bytes_to_read, on_error::callback<system_error> on_err = on_error::throw_on_error{}) -> size_t
+    inline auto copy(reader & src, std::ostream & dst, size_t bytes_to_read, on_error::callback<system_error> on_err = on_error::throw_on_error{}) -> size_t
     {
         // Allocate a temporary copy-buffer on the stack (4K at max)
         auto buf_size = std::min(bytes_to_read, static_cast<size_t>(4096));

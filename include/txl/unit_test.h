@@ -133,7 +133,7 @@ namespace txl
         }
         else
         {
-            os << get_type_info<T>().name() << '<' << reinterpret_cast<void const *>(&value.value_) << '>';
+            os << get_type_info<T>().name() << '<' << static_cast<void const *>(&value.value_) << '>';
         }
         return os;
     }
