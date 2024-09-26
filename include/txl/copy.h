@@ -5,6 +5,7 @@
 #include <txl/on_error.h>
 #include <txl/system_error.h>
 
+#include <algorithm>
 #include <cstdlib>
 #include <ostream>
 
@@ -31,5 +32,14 @@ namespace txl
     auto copy(reader & src, std::ostream & dst, buffer_ref copy_buf, on_error::callback<system_error> on_err = on_error::throw_on_error{}) -> size_t
     {
         return copy(src, dst, copy_buf, copy_buf.size(), on_err);
+    }
+    
+    auto copy(reader & src, std::ostream & dst, size_t bytes_to_read, on_error::callback<system_error> on_err = on_error::throw_on_error{}) -> size_t
+    {
+        // Allocate a temporary copy-buffer on the stack (4K at max)
+        auto buf_size = std::min(bytes_to_read, static_cast<size_t>(4096));
+        std::byte buf[buf_size];
+        
+        return copy(src, dst, {buf, buf_size}, bytes_to_read, on_err);
     }
 }

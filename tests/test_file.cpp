@@ -2,6 +2,7 @@
 #include <txl/copy.h>
 #include <txl/file.h>
 #include <txl/on_error.h>
+#include <txl/read_string.h>
 #include <txl/types.h>
 
 #include <sstream>
@@ -94,6 +95,31 @@ TXL_UNIT_TEST(file_error_capture)
     auto f = txl::file{"not-a-file.txt", "r", txl::on_error::capture(err)};
     assert_false(f.is_open());
     assert_true(err.is_error());
+}
+
+TXL_UNIT_TEST(file_seek)
+{
+    auto f = txl::file{"data.txt", "w+"};
+    assert_true(f.is_open());
+
+    auto s = f.write(std::string_view{"HAHAHA! I wet 'em."});
+    assert_equal(s, std::string_view{"HAHAHA! I wet 'em."});
+
+    // Seek from end
+    f.seek(-10, txl::file::seek_end);
+    auto pepperpot = txl::read_string(f, 10);
+    assert_equal(std::string_view{pepperpot}, std::string_view{"I wet 'em."});
+    
+    // Seek backwards
+    f.seek(-10, txl::file::seek_current);
+    f.seek(-4, txl::file::seek_current);
+    auto guffaw = txl::read_string(f, 2);
+    assert_equal(std::string_view{guffaw}, std::string_view{"HA"});
+    
+    // Seek set
+    f.seek(3, txl::file::seek_set);
+    auto laugh = txl::read_string(f, 4);
+    assert_equal(std::string_view{laugh}, std::string_view{"AHA!"});
 }
 
 TXL_RUN_TESTS()

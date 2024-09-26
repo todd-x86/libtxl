@@ -32,6 +32,17 @@ namespace txl
             : buffer_ref(reinterpret_cast<void *>(&s[0]), Size)
         {
         }
+        
+        template<size_t Size>
+        buffer_ref(std::byte (&b)[Size])
+            : buffer_ref(reinterpret_cast<void *>(&b[0]), Size)
+        {
+        }
+        
+        buffer_ref(std::byte * buffer, size_t length)
+            : buffer_ref(reinterpret_cast<void *>(buffer), length)
+        {
+        }
 
         buffer_ref(void * buffer, size_t length)
             : buffer_(buffer)

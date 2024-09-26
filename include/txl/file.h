@@ -52,26 +52,33 @@ namespace txl
             return 0;
         }
 
-        auto read_impl(buffer_ref buf, on_error::callback<system_error> on_err) -> buffer_ref
+        auto read_impl(buffer_ref buf, on_error::callback<system_error> on_err) -> size_t
         {
             auto bytes_read = ::read(fd_, buf.data(), buf.size());
             if (handle_system_error(bytes_read, on_err))
             {
-                return buf.slice(0, bytes_read);
+                return bytes_read;
             }
-            return {};
+            return 0;
         }
 
-        auto write_impl(buffer_ref buf, on_error::callback<system_error> on_err) -> buffer_ref
+        auto write_impl(buffer_ref buf, on_error::callback<system_error> on_err) -> size_t
         {
             auto bytes_written = ::write(fd_, buf.data(), buf.size());
             if (handle_system_error(bytes_written, on_err))
             {
-                return buf.slice(0, bytes_written);
+                return bytes_written;
             }
-            return {};
+            return 0;
         }
     public:
+        enum seek_type : int
+        {
+            seek_set = SEEK_SET,
+            seek_current = SEEK_CUR,
+            seek_end = SEEK_END,
+        };
+
         file() = default;
         file(std::string_view filename, std::string_view mode, on_error::callback<system_error> on_open_err = on_error::throw_on_error{})
             : file()
@@ -117,6 +124,13 @@ namespace txl
             {
                 fd_ = -1;
             }
+        }
+
+        auto seek(off_t offset, seek_type st = seek_set, on_error::callback<system_error> on_err = on_error::throw_on_error{}) -> off_t
+        {
+            auto res = ::lseek(fd_, offset, static_cast<int>(st));
+            handle_system_error(res, on_err);
+            return res;
         }
     };
 }
