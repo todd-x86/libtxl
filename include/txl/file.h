@@ -52,7 +52,7 @@ namespace txl
             return 0;
         }
 
-        auto read_impl(buffer_ref buf, on_error::callback<system_error> on_err) -> size_t
+        auto read_impl(buffer_ref buf, on_error::callback<system_error> on_err) -> size_t override
         {
             auto bytes_read = ::read(fd_, buf.data(), buf.size());
             if (handle_system_error(bytes_read, on_err))
@@ -62,7 +62,7 @@ namespace txl
             return 0;
         }
 
-        auto write_impl(buffer_ref buf, on_error::callback<system_error> on_err) -> size_t
+        auto write_impl(buffer_ref buf, on_error::callback<system_error> on_err) -> size_t override
         {
             auto bytes_written = ::write(fd_, buf.data(), buf.size());
             if (handle_system_error(bytes_written, on_err))

@@ -5,8 +5,10 @@
 #include <txl/on_error.h>
 #include <txl/handle_error.h>
 #include <txl/system_error.h>
+#include <txl/socket_address.h>
 
 #include <sys/socket.h>
+#include <unistd.h>
 
 #include <algorithm>
 
@@ -18,14 +20,19 @@ namespace txl
     private:
         int fd_ = -1;
     protected:
-        auto read_impl(buffer_ref buf, on_error::callback<system_error> on_err) override -> size_t
+        auto read_impl(buffer_ref buf, on_error::callback<system_error> on_err) -> size_t override
         {
             return read(buf, none, on_err).size();
         }
 
-        auto write_impl(buffer_ref buf, on_error::callback<system_error> on_err) override -> size_t
+        auto write_impl(buffer_ref buf, on_error::callback<system_error> on_err) -> size_t override
         {
             return write(buf, none, on_err).size();
+        }
+
+        socket(int fd)
+            : fd_(fd)
+        {
         }
     public:
         enum flags : int
@@ -38,7 +45,7 @@ namespace txl
         enum address_family : int
         {
             internet = AF_INET,
-            unix = AF_UNIX,
+            unix_socket = AF_UNIX,
             local = AF_LOCAL,
         };
 
@@ -69,6 +76,11 @@ namespace txl
             close(on_error::ignore{});
         }
 
+        auto fd() const -> int
+        {
+            return fd_;
+        }
+
         auto is_open() const -> bool
         {
             return fd_ != -1;
@@ -82,7 +94,7 @@ namespace txl
         
         using reader::read;
 
-        auto read(buffer_ref buf, flags f, on_error::callback<system_error> on_err) override -> buffer_ref
+        auto read(buffer_ref buf, flags f, on_error::callback<system_error> on_err) -> buffer_ref
         {
             auto res = ::recv(fd_, buf.data(), buf.size(), static_cast<int>(f));
             if (handle_system_error(res, on_err))
@@ -94,7 +106,7 @@ namespace txl
 
         using writer::write;
 
-        auto write(buffer_ref buf, flags f, on_error::callback<system_error> on_err) override -> buffer_ref
+        auto write(buffer_ref buf, flags f, on_error::callback<system_error> on_err) -> buffer_ref
         {
             auto res = ::send(fd_, buf.data(), buf.size(), static_cast<int>(f));
             if (handle_system_error(res, on_err))
@@ -116,38 +128,63 @@ namespace txl
         auto shutdown(on_error::callback<system_error> on_err = on_error::throw_on_error{}) -> bool
         {
             auto res = ::shutdown(fd_, SHUT_RDWR);
-            return handle_system_error_code(res, on_err);
+            return handle_system_error(res, on_err);
         }
 
-        template<class SockAddr>
-        bool connect(SockAddr * addr, size_t addr_size, error_code & err)
+        auto connect(socket_address const & sa, on_error::callback<system_error> on_err = on_error::throw_on_error{}) -> bool
         {
-            auto res = ::connect(fd(), reinterpret_cast<::sockaddr const *>(addr), addr_size);
-            return handle_error_code(res, err);
+            auto res = ::connect(fd_, reinterpret_cast<::sockaddr const *>(sa.sockaddr()), sa.size());
+            return handle_system_error(res, on_err);
         }
 
-        auto accept(::sockaddr * out_sockaddr, ::socklen_t * out_sockaddr_len, int flags, on_error::callback<system_error> on_err = on_error::throw_on_error{}) -> socket
+        auto accept(socket_address & out_addr, int flags, on_error::callback<system_error> on_err = on_error::throw_on_error{}) -> socket
         {
-            auto res = ::accept4(fd(), reinterpret_cast<::sockaddr *>(out_sockaddr), out_sockaddr_len, flags);
-            handle_error_code(res, err);
-            return accepted_socket(res);
+            ::socklen_t out_sockaddr_len = sizeof(out_addr.addr_);
+            auto res = ::accept4(fd_, reinterpret_cast<::sockaddr *>(&out_addr.addr_), &out_sockaddr_len, flags);
+            if (handle_system_error(res, on_err))
+            {
+                return socket(res);
+            }
+            return {};
         }
-
-        template<class SockAddr>
-        auto bind(SockAddr * addr) -> bool
+        
+        auto accept(int flags, on_error::callback<system_error> on_err = on_error::throw_on_error{}) -> socket
         {
-            static_assert(sizeof(SockAddr) >= sizeof(sockaddr), "SockAddr must be at least sizeof(struct sockaddr)");
-            auto res = ::bind(fd(), reinterpret_cast<sockaddr const *>(addr), sizeof(SockAddr));
-            return handle_error_code(res, err);
+            socket_address sa{};
+            return accept(sa, flags, on_err);
         }
 
+        auto bind(socket_address const & sa, on_error::callback<system_error> on_err = on_error::throw_on_error{}) -> bool
+        {
+            auto res = ::bind(fd_, reinterpret_cast<::sockaddr const *>(sa.sockaddr()), sa.size());
+            return handle_system_error(res, on_err);
+        }
 
         auto listen(int backlog, on_error::callback<system_error> on_err = on_error::throw_on_error{}) -> bool
         {
-            return handle_error_code(::listen(fd(), backlog), err);
+            auto res = ::listen(fd_, backlog);
+            return handle_system_error(res, on_err);
         }
 
-        template<class Value>
+        auto get_remote_address(on_error::callback<system_error> on_err = on_error::throw_on_error{}) const -> socket_address
+        {
+            socket_address sa{};
+            ::socklen_t addr_sz = sa.size();
+            auto res = ::getpeername(fd_, reinterpret_cast<::sockaddr *>(&sa.addr_), &addr_sz);
+            handle_system_error(res, on_err);
+            return sa;
+        }
+
+        auto get_local_address(on_error::callback<system_error> on_err = on_error::throw_on_error{}) const -> socket_address
+        {
+            socket_address sa{};
+            ::socklen_t addr_sz = sa.size();
+            auto res = ::getsockname(fd_, reinterpret_cast<::sockaddr *>(&sa.addr_), &addr_sz);
+            handle_system_error(res, on_err);
+            return sa;
+        }
+
+        /*template<class Value>
         bool getsockopt(int level, int optname, Value * value, error_code & err) const
         {
             auto value_len = static_cast<socklen_t>(sizeof(Value));
@@ -160,6 +197,6 @@ namespace txl
         {
             auto res = ::setsockopt(fd(), level, optname, reinterpret_cast<void const *>(value), static_cast<socklen_t>(sizeof(Value)));
             return handle_error_code(res, err);
-        }
+        }*/
     };
 }

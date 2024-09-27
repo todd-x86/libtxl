@@ -6,103 +6,46 @@
 
 namespace txl
 {
-    /**
-     *
-     */
-    struct any_addr_t {};
-    /**
-     *
-     */
-    static constexpr any_addr_t any_addr{};
-    
-    /**
-     *
-     */
-    struct none_addr_t {};
-    /**
-     *
-     */
-    static constexpr none_addr_t none_addr{};
-
-    /**
-     *
-     */
-    // TODO: use ip_address for sin_addr portion
-    class endpoint final
+    class socket_address final
     {
+        friend class socket;
     private:
-        sockaddr_in M_addr_{};
+        ::sockaddr_in addr_{};
     public:
-        /**
-         *
-         */
-        endpoint()
+        socket_address()
         {
-            M_addr_.sin_family = AF_INET;
+            addr_.sin_family = AF_INET;
+            addr_.sin_addr.s_addr = INADDR_NONE;
         }
 
-        /**
-         *
-         */
-        endpoint(none_addr_t)
-            : endpoint()
+        socket_address(uint16_t port)
+            : socket_address()
         {
-            M_addr_.sin_addr.s_addr = INADDR_NONE;
+            addr_.sin_addr.s_addr = htonl(INADDR_ANY);
+            addr_.sin_port = htons(port);
         }
 
-        /**
-         *
-         */
-        endpoint(any_addr_t, uint16_t port)
-            : endpoint()
+        socket_address(char const * ip, uint16_t port)
+            : socket_address()
         {
-            M_addr_.sin_addr.s_addr = htonl(INADDR_ANY);
-            M_addr_.sin_port = htons(port);
+            addr_.sin_addr.s_addr = inet_addr(ip);
+            addr_.sin_port = htons(port);
         }
 
-        /**
-         *
-         */
-        // TODO: use ip_address as arg
-        endpoint(char const * ip, uint16_t port)
-            : endpoint()
+        auto sockaddr() const -> ::sockaddr_in const * { return &addr_; }
+        static constexpr auto size() -> size_t { return sizeof(addr_); }
+
+        auto operator==(socket_address const & sa) const -> bool
         {
-            M_addr_.sin_addr.s_addr = inet_addr(ip);
-            M_addr_.sin_port = htons(port);
+            return (addr_.sin_addr.s_addr == sa.addr_.sin_addr.s_addr and
+                    addr_.sin_port == sa.addr_.sin_port)
+                or (addr_.sin_addr.s_addr == INADDR_NONE and
+                    sa.addr_.sin_addr.s_addr == INADDR_NONE);
         }
 
-        /**
-         *
-         */
-        sockaddr_in const * sockaddr() const { return &M_addr_; }
-
-        /**
-         *
-         */
-        bool operator==(endpoint const & ep) const
+        auto operator!=(socket_address const & sa) const -> bool
         {
-            return (M_addr_.sin_addr.s_addr == ep.M_addr_.sin_addr.s_addr &&
-                    M_addr_.sin_port == ep.M_addr_.sin_port)
-                || (M_addr_.sin_addr.s_addr == INADDR_NONE &&
-                    ep.M_addr_.sin_addr.s_addr == INADDR_NONE);
+            return !(*this == sa);
         }
-
-        /**
-         *
-         */
-        bool operator!=(endpoint const & ep) const
-        {
-            return !(*this == ep);
-        }
-
-        /**
-         *
-         */
-        static const endpoint none;
     };
-
-    /**
-     *
-     */
-    const endpoint endpoint::none(none_addr);
 }
