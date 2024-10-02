@@ -7,39 +7,90 @@
 
 #include <algorithm>
 #include <cstdlib>
-#include <ostream>
+#include <type_traits>
 
 namespace txl
 {
-    auto copy(reader & src, std::ostream & dst, buffer_ref copy_buf, size_t bytes_to_read, on_error::callback<system_error> on_err = on_error::throw_on_error{}) -> size_t
+    struct size_policy
+    {
+        size_t value;
+
+        size_policy(size_t i)
+            : value(i)
+        {
+        }
+
+        auto process(size_t requested, size_t actual) -> void
+        {
+            if (actual >= value)
+            {
+                value = 0;
+            }
+            else
+            {
+                value -= actual;
+            }
+        }
+
+        auto is_complete() const -> bool
+        {
+            return value == 0;
+        }
+    };
+
+    struct exactly final : size_policy
+    {
+    };
+    
+    struct at_most final : size_policy
+    {
+        bool maybe_eof_ = false;
+
+        auto process(size_t requested, size_t actual) -> void
+        {
+            maybe_eof_ = (requested > actual);
+            size_policy::process(requested, actual);
+        }
+
+        auto is_complete() const -> bool
+        {
+            return value == 0 or maybe_eof_;
+        }
+    };
+
+    template<class SizePolicy>
+    auto copy(reader & src, writer & dst, buffer_ref copy_buf, SizePolicy bytes_to_read, on_error::callback<system_error> on_err = on_error::throw_on_error{}) -> size_t
     {
         size_t total_read = 0;
-        while (total_read < bytes_to_read)
+        while (not bytes_to_read.is_complete())
         {
-            auto buf_read = src.read(copy_buf, on_err);
+            auto input_buf = copy_buf.slice(0, bytes_to_read.value);
+            auto buf_read = src.read(input_buf, on_err);
             if (buf_read.empty())
             {
                 break;
             }
-            // TODO: check dst.good()
-            dst.write(static_cast<char const *>(copy_buf.data()), buf_read.size());
-            total_read += buf_read.size();
+
+            auto written = dst.write(buf_read, on_err);
+            total_read += written.size();
+            bytes_to_read.process(input_buf.size(), written.size());
         }
 
         return total_read;
     }
     
-    inline auto copy(reader & src, std::ostream & dst, buffer_ref copy_buf, on_error::callback<system_error> on_err = on_error::throw_on_error{}) -> size_t
-    {
-        return copy(src, dst, copy_buf, copy_buf.size(), on_err);
-    }
-    
-    inline auto copy(reader & src, std::ostream & dst, size_t bytes_to_read, on_error::callback<system_error> on_err = on_error::throw_on_error{}) -> size_t
+    template<class SizePolicy, class = std::enable_if_t<std::is_base_of_v<size_policy, SizePolicy>>>
+    inline auto copy(reader & src, writer & dst, SizePolicy bytes_to_read, on_error::callback<system_error> on_err = on_error::throw_on_error{}) -> size_t
     {
         // Allocate a temporary copy-buffer on the stack (4K at max)
-        auto buf_size = std::min(bytes_to_read, static_cast<size_t>(4096));
+        auto buf_size = std::min(static_cast<size_t>(bytes_to_read.value), static_cast<size_t>(4096));
         std::byte buf[buf_size];
         
-        return copy(src, dst, {buf, buf_size}, bytes_to_read, on_err);
+        return copy(src, dst, buffer_ref{buf, buf_size}, bytes_to_read, on_err);
+    }
+    
+    inline auto copy(reader & src, writer & dst, buffer_ref copy_buf, on_error::callback<system_error> on_err = on_error::throw_on_error{}) -> size_t
+    {
+        return copy(src, dst, copy_buf, exactly{copy_buf.size()}, on_err);
     }
 }

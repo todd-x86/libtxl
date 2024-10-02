@@ -81,9 +81,9 @@ namespace txl
         auto data() -> void * { return buffer_; }
         auto data() const -> void const * { return buffer_; }
         auto size() const -> size_t { return length_; }
-        auto begin() -> void * { return buffer_; }
-        auto end() -> void * { return static_cast<void *>(std::next(static_cast<char *>(buffer_), length_)); }
-        auto begin() const -> void const * { return buffer_; }
-        auto end() const -> void const * { return static_cast<void const *>(std::next(static_cast<char const *>(buffer_), length_)); }
+        auto begin() -> std::byte * { return reinterpret_cast<std::byte *>(buffer_); }
+        auto end() -> std::byte * { return std::next(begin(), length_); }
+        auto begin() const -> std::byte const * { return reinterpret_cast<std::byte const *>(buffer_); }
+        auto end() const -> std::byte const * { return std::next(begin(), length_); }
     };
 }

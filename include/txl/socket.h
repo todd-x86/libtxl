@@ -22,12 +22,12 @@ namespace txl
     protected:
         auto read_impl(buffer_ref buf, on_error::callback<system_error> on_err) -> size_t override
         {
-            return read(buf, none, on_err).size();
+            return read(buf, io_flags::none, on_err).size();
         }
 
         auto write_impl(buffer_ref buf, on_error::callback<system_error> on_err) -> size_t override
         {
-            return write(buf, none, on_err).size();
+            return write(buf, io_flags::none, on_err).size();
         }
 
         socket(int fd)
@@ -35,11 +35,18 @@ namespace txl
         {
         }
     public:
-        enum flags : int
+        enum class io_flags : int
         {
             none = 0,
             non_block = MSG_DONTWAIT,
             error_queue = MSG_ERRQUEUE,
+        };
+
+        enum class accept_flags : int
+        {
+            none = 0,
+            non_block = SOCK_NONBLOCK,
+            close_on_exec = SOCK_CLOEXEC,
         };
 
         enum address_family : int
@@ -94,7 +101,7 @@ namespace txl
         
         using reader::read;
 
-        auto read(buffer_ref buf, flags f, on_error::callback<system_error> on_err) -> buffer_ref
+        auto read(buffer_ref buf, io_flags f, on_error::callback<system_error> on_err) -> buffer_ref
         {
             auto res = ::recv(fd_, buf.data(), buf.size(), static_cast<int>(f));
             if (handle_system_error(res, on_err))
@@ -106,7 +113,7 @@ namespace txl
 
         using writer::write;
 
-        auto write(buffer_ref buf, flags f, on_error::callback<system_error> on_err) -> buffer_ref
+        auto write(buffer_ref buf, io_flags f, on_error::callback<system_error> on_err) -> buffer_ref
         {
             auto res = ::send(fd_, buf.data(), buf.size(), static_cast<int>(f));
             if (handle_system_error(res, on_err))
@@ -137,10 +144,10 @@ namespace txl
             return handle_system_error(res, on_err);
         }
 
-        auto accept(socket_address & out_addr, int flags, on_error::callback<system_error> on_err = on_error::throw_on_error{}) -> socket
+        auto accept(socket_address & out_addr, accept_flags flags = accept_flags::none, on_error::callback<system_error> on_err = on_error::throw_on_error{}) -> socket
         {
             ::socklen_t out_sockaddr_len = sizeof(out_addr.addr_);
-            auto res = ::accept4(fd_, reinterpret_cast<::sockaddr *>(&out_addr.addr_), &out_sockaddr_len, flags);
+            auto res = ::accept4(fd_, reinterpret_cast<::sockaddr *>(&out_addr.addr_), &out_sockaddr_len, static_cast<int>(flags));
             if (handle_system_error(res, on_err))
             {
                 return socket(res);
@@ -148,7 +155,7 @@ namespace txl
             return {};
         }
         
-        auto accept(int flags, on_error::callback<system_error> on_err = on_error::throw_on_error{}) -> socket
+        auto accept(accept_flags flags = accept_flags::none, on_error::callback<system_error> on_err = on_error::throw_on_error{}) -> socket
         {
             socket_address sa{};
             return accept(sa, flags, on_err);

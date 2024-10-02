@@ -25,12 +25,14 @@ namespace txl
             addr_.sin_port = htons(port);
         }
 
-        socket_address(char const * ip, uint16_t port)
+        socket_address(char const * ip, uint16_t port = 0)
             : socket_address()
         {
             addr_.sin_addr.s_addr = inet_addr(ip);
             addr_.sin_port = htons(port);
         }
+
+        auto port() const -> uint16_t { return ntohs(addr_.sin_port); }
 
         auto sockaddr() const -> ::sockaddr_in const * { return &addr_; }
         static constexpr auto size() -> size_t { return sizeof(addr_); }
@@ -45,7 +47,7 @@ namespace txl
 
         auto operator!=(socket_address const & sa) const -> bool
         {
-            return !(*this == sa);
+            return not (*this == sa);
         }
     };
 }
