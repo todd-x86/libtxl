@@ -48,4 +48,37 @@ TXL_UNIT_TEST(to_string_view)
     assert_equal(src, dst);
 }
 
+TXL_UNIT_TEST(compare)
+{
+    using namespace std::literals;
+
+    {
+        auto b1 = txl::buffer_ref{"123456"sv};
+        auto b2 = txl::buffer_ref{"123456"sv};
+
+        assert_true(b1.equal(b2));
+        assert_equal(b1.compare(b2), 0);
+        assert_equal(b1.compare(b1), 0);
+        assert_equal(b2.compare(b2), 0);
+    }
+    
+    {
+        auto b1 = txl::buffer_ref{"123457"sv};
+        auto b2 = txl::buffer_ref{"123456"sv};
+
+        assert_false(b1.equal(b2));
+        assert_equal(b1.compare(b2), 1);
+        assert_equal(b2.compare(b1), -1);
+    }
+    
+    {
+        auto b1 = txl::buffer_ref{"12345"sv};
+        auto b2 = txl::buffer_ref{"123456"sv};
+
+        assert_false(b1.equal(b2));
+        assert_equal(b1.compare(b2), -1);
+        assert_equal(b2.compare(b1), 1);
+    }
+}
+
 TXL_RUN_TESTS()

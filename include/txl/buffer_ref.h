@@ -1,9 +1,12 @@
 #pragma once
 
+#include <txl/types.h>
+
 #include <algorithm>
 #include <string_view>
 #include <iterator>
 #include <array>
+#include <cstring>
 
 namespace txl
 {
@@ -44,10 +47,46 @@ namespace txl
         {
         }
 
+        buffer_ref(byte_vector & b)
+            : buffer_ref(static_cast<void *>(b.data()), b.size())
+        {
+        }
+        
+        buffer_ref(byte_vector const & b)
+            : buffer_ref(static_cast<void *>(const_cast<byte_vector &>(b).data()), b.size())
+        {
+        }
+
         buffer_ref(void * buffer, size_t length)
             : buffer_(buffer)
             , length_(length)
         {
+        }
+
+        auto compare(buffer_ref const & other) const -> int
+        {
+            auto bytes_to_compare = std::min(size(), other.size());
+            auto cmp = std::memcmp(data(), other.data(), bytes_to_compare);
+            if (cmp != 0)
+            {
+                return cmp;
+            }
+
+            // Compare sizes
+            if (size() > other.size())
+            {
+                return 1;
+            }
+            if (size() < other.size())
+            {
+                return -1;
+            }
+            return 0;
+        }
+
+        auto equal(buffer_ref const & other) const -> bool
+        {
+            return compare(other) == 0;
         }
 
         auto operator==(buffer_ref const & other) const -> bool

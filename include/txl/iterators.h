@@ -20,6 +20,24 @@ namespace txl
             , next_(next)
         {
         }
+
+        auto prev()
+        {
+            if (next_ == begin_)
+            {
+                next_ = end_;
+            }
+            --next_;
+        }
+
+        auto next()
+        {
+            ++next_;
+            if (next_ == end_)
+            {
+                next_ = begin_;
+            }
+        }
     public:
         using value_type = std::iterator_traits<Iter>::value_type;
         using reference = std::iterator_traits<Iter>::reference;
@@ -45,21 +63,25 @@ namespace txl
         
         auto operator--() -> circular_iterator &
         {
-            if (next_ == begin_)
-            {
-                next_ = end_;
-            }
-            --next_;
+            prev();
+            return *this;
+        }
+        
+        auto operator--(int) -> circular_iterator &
+        {
+            prev();
             return *this;
         }
 
         auto operator++() -> circular_iterator &
         {
-            ++next_;
-            if (next_ == end_)
-            {
-                next_ = begin_;
-            }
+            next();
+            return *this;
+        }
+
+        auto operator++(int) -> circular_iterator &
+        {
+            next();
             return *this;
         }
         
@@ -94,7 +116,6 @@ namespace txl
                 return their_pos - my_pos;
             }
             auto total_dist = std::distance(begin_, end_);
-            // I think this is right???
             return their_pos + total_dist - my_pos;
         }
         
@@ -104,7 +125,7 @@ namespace txl
             it -= i;
             return it;
         }
-
+        
         auto operator-=(difference_type i) -> circular_iterator &
         {
             while (i != 0)
@@ -125,5 +146,21 @@ namespace txl
     inline auto make_circular_iterator(Iter begin, Iter end) noexcept -> circular_iterator<Iter>
     {
         return {begin, end};
+    }
+
+    // This differs from std::copy_n() since std::copy_n() simply calls std::copy() with
+    // the input iterator N distance ahead, which in the case of special iterators like
+    // circular iterator, this principle gets violated when you iterate more than the
+    // entire distance of the iterator.
+    template<class InputIter, class OutputIter>
+    inline auto iter_copy_n(InputIter in, size_t n, OutputIter out) -> void
+    {
+        while (n != 0)
+        {
+            *out = *in;
+            ++out;
+            ++in;
+            --n;
+        }
     }
 }

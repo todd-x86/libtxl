@@ -20,7 +20,7 @@ protected:
     {
         auto it = txl::make_circular_iterator(std::begin(NUMBERS), std::end(NUMBERS));
         auto to_copy = std::min(max_ - read_, buf.size());
-        std::copy_n(std::next(it, read_ % NUMBERS.size()), to_copy, reinterpret_cast<char *>(buf.begin()));
+        txl::iter_copy_n(std::next(it, read_ % NUMBERS.size()), to_copy, reinterpret_cast<char *>(buf.begin()));
         return to_copy;
     }
 public:
@@ -39,9 +39,8 @@ private:
 protected:
     auto write_impl(txl::buffer_ref buf, txl::on_error::callback<txl::system_error> on_err) -> size_t override
     {
-        auto to_copy = std::min(max_ - written_, buf.size());
-        std::copy_n(std::next(std::begin(NUMBERS), written_ % NUMBERS.size()), to_copy, std::back_inserter(available_));
-        return to_copy;
+        std::copy_n(reinterpret_cast<char const *>(buf.begin()), buf.size(), std::back_inserter(available_));
+        return buf.size();
     }
 public:
     dummy_writer(size_t max)
@@ -54,10 +53,24 @@ public:
 
 TXL_UNIT_TEST(copy_read)
 {
-    auto rd = dummy_reader{100};
+    using namespace std::literals;
 
+    auto rd = dummy_reader{100};
     auto wr = dummy_writer{100};
-    txl::copy(rd, wr, txl::exactly{11});
+
+    auto copied = txl::copy(rd, wr, txl::exactly{11});
+    assert_equal(copied, 11);
+    {
+        auto expected = txl::buffer_ref{"01234567890"sv};
+        auto actual = txl::buffer_ref{wr.available()};
+        for (auto c : wr.available())
+        {
+            std::cout << "'" << c << "', ";
+        }
+        std::cout << std::endl;
+        assert_equal(expected.size(), actual.size());
+        assert_true(expected.equal(actual));
+    }
 }
 
 
