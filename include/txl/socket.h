@@ -29,6 +29,23 @@ namespace txl
         {
             return write(buf, io_flags::none, on_err).size();
         }
+        
+        template<class T>
+        auto get_option(int level, int optname, on_error::callback<system_error> on_err) const -> T
+        {
+            auto value_len = static_cast<socklen_t>(sizeof(T));
+            auto value = T{};
+            auto res = ::getsockopt(fd_, level, optname, static_cast<void *>(&value), &value_len);
+            handle_system_error(res, on_err);
+            return value;
+        }
+
+        template<class T>
+        auto set_option(int level, int optname, T const & value, on_error::callback<system_error> on_err) -> bool
+        {
+            auto res = ::setsockopt(fd_, level, optname, reinterpret_cast<void const *>(&value), static_cast<socklen_t>(sizeof(T)));
+            return handle_system_error(res, on_err);
+        }
 
         socket(int fd)
             : fd_(fd)
@@ -190,20 +207,5 @@ namespace txl
             handle_system_error(res, on_err);
             return sa;
         }
-
-        /*template<class Value>
-        bool getsockopt(int level, int optname, Value * value, error_code & err) const
-        {
-            auto value_len = static_cast<socklen_t>(sizeof(Value));
-            auto res = ::getsockopt(fd(), level, optname, reinterpret_cast<void *>(value), &value_len);
-            return handle_error_code(res, err);
-        }
-
-        template<class Value>
-        bool setsockopt(int level, int optname, Value const * value, error_code & err)
-        {
-            auto res = ::setsockopt(fd(), level, optname, reinterpret_cast<void const *>(value), static_cast<socklen_t>(sizeof(Value)));
-            return handle_error_code(res, err);
-        }*/
     };
 }
