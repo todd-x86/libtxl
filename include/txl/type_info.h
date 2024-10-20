@@ -10,11 +10,16 @@ namespace txl
     // Compile-time type information
     struct type_info final
     {
-        char const * const name_data;
-        const size_t name_len;
-        const size_t hash;
+        char const * name_data = nullptr;
+        size_t name_len = 0;
+        size_t hash = 0;
 
-        inline bool operator==(type_info const & ti) const
+        auto empty() const -> bool
+        {
+            return name_len == 0 and hash == 0;
+        }
+
+        auto operator==(type_info const & ti) const -> bool
         {
             // Compare name pointers before string contents
             // (names point to statically-allocated __PRETTY_FUNCTION__ macros)
@@ -25,15 +30,15 @@ namespace txl
 
         auto name() const -> std::string_view { return {name_data, name_len}; }
 
-        std::string str() const { return std::string(name_data, name_len); }
+        auto str() const -> std::string { return std::string(name_data, name_len); }
 
-        inline bool operator!=(type_info const & ti) const
+        auto operator!=(type_info const & ti) const -> bool
         {
             return !(*this == ti);
         }
     };
 
-    inline std::ostream & operator<<(std::ostream & os, type_info const & ti)
+    inline auto operator<<(std::ostream & os, type_info const & ti) -> std::ostream &
     {
         os << "type_info { name=\"";
         auto n = ti.name_data;
@@ -98,7 +103,7 @@ namespace std
     template<>
     struct hash<txl::type_info>
     {
-        inline size_t operator()(txl::type_info const & ti) const
+        auto operator()(txl::type_info const & ti) const -> size_t
         {
             return ti.hash;
         }
