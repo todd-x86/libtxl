@@ -77,6 +77,7 @@ namespace txl
     private:
         storage_union_base<0, Args...> base_;
         uint8_t occupied_ = std::numeric_limits<uint8_t>::max();
+        uint8_t padding_[sizeof(void *)-sizeof(uint8_t)];
 
         auto invoke_deleter() -> void
         {
@@ -92,13 +93,22 @@ namespace txl
         }
 
         template<class T>
+        auto get() const -> T { return static_cast<T>(base_); }
+
+        template<class T>
+        auto set(T && value) -> void
+        {
+            invoke_deleter();
+            base_.assign(occupied_, std::move(value));
+        }
+
+        template<class T>
         operator T() const { return static_cast<T>(base_); }
 
         template<class T>
         auto operator=(T value) -> storage_union<Args...> &
         {
-            invoke_deleter();
-            base_.assign(occupied_, std::move(value));
+            set(std::move(value));
             return *this;
         }
     };
