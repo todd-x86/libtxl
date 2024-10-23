@@ -1,5 +1,7 @@
 #pragma once
 
+// Alternative for std::variant with a more union-like interface (no safeties)
+
 #include <limits>
 #include <cstdint>
 
@@ -14,6 +16,16 @@ namespace txl
     private:
         uint8_t value_[sizeof(T)];
     public:
+        template<class C>
+        auto contains(uint8_t occupied) const -> bool
+        {
+            if constexpr (std::is_same_v<T, C>)
+            {
+                return (S == occupied);
+            }
+            return false;
+        }
+
         auto invoke_deleter(uint8_t occupied)
         {
             if (occupied == S)
@@ -41,6 +53,16 @@ namespace txl
             storage_union_base<S+1, Args...> args_;
         };
     public:
+        template<class C>
+        auto contains(uint8_t occupied) const -> bool
+        {
+            if constexpr (std::is_same_v<T, C>)
+            {
+                return (S == occupied);
+            }
+            return args_.template contains<C>(occupied);
+        }
+
         auto invoke_deleter(uint8_t occupied)
         {
             if (occupied == S)
@@ -91,6 +113,11 @@ namespace txl
         {
             invoke_deleter();
         }
+
+        auto reset() -> void { occupied_ = std::numeric_limits<uint8_t>::max(); }
+
+        template<class T>
+        auto has() const -> bool { return base_.template contains<T>(occupied_); }
 
         template<class T>
         auto get() const -> T { return static_cast<T>(base_); }
