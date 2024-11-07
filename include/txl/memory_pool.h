@@ -1,6 +1,7 @@
 #pragma once
 
-#include "types.h"
+#include <txl/types.h>
+
 #include <mutex>
 #include <algorithm>
 #include <cstdint>
@@ -56,7 +57,7 @@ namespace txl
      * Free List: ----------+                        |
      * Next Alloc: ----------------------------------+
      */
-    class memory_pool
+    class memory_pool final
     {
         friend class memory_pool_chunk;
     private:

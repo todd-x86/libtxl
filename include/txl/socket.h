@@ -1,6 +1,7 @@
 #pragma once
 
 #include <txl/buffer_ref.h>
+#include <txl/file_base.h>
 #include <txl/io.h>
 #include <txl/on_error.h>
 #include <txl/handle_error.h>
@@ -10,15 +11,12 @@
 #include <sys/socket.h>
 #include <unistd.h>
 
-#include <algorithm>
-
 namespace txl
 {
-    class socket : public reader
+    class socket : public file_base
+                 , public reader
                  , public writer
     {
-    private:
-        int fd_ = -1;
     protected:
         auto read_impl(buffer_ref buf, on_error::callback<system_error> on_err) -> size_t override
         {
@@ -48,7 +46,7 @@ namespace txl
         }
 
         socket(int fd)
-            : fd_(fd)
+            : file_base(fd)
         {
         }
     public:
@@ -89,26 +87,7 @@ namespace txl
         }
 
         socket(socket const &) = delete;
-        socket(socket && s)
-            : socket()
-        {
-            std::swap(s.fd_, fd_);
-        }
-
-        virtual ~socket()
-        {
-            close(on_error::ignore{});
-        }
-
-        auto fd() const -> int
-        {
-            return fd_;
-        }
-
-        auto is_open() const -> bool
-        {
-            return fd_ != -1;
-        }
+        socket(socket && s) = default;
 
         auto open(address_family af, socket_type t, int protocol = 0, on_error::callback<system_error> on_err = on_error::throw_on_error{}) -> bool
         {
@@ -140,15 +119,6 @@ namespace txl
             return {};
         }
 
-        auto close(on_error::callback<system_error> on_err = on_error::throw_on_error{}) -> void
-        {
-            auto res = ::close(fd_);
-            if (handle_system_error(res, on_err))
-            {
-                fd_ = -1;
-            }
-        }
-        
         auto shutdown(on_error::callback<system_error> on_err = on_error::throw_on_error{}) -> bool
         {
             auto res = ::shutdown(fd_, SHUT_RDWR);

@@ -1,10 +1,9 @@
 #pragma once
 
-#include <txl/result.h>
-
 #include <ostream>
 #include <string_view>
 #include <errno.h>
+#include <string.h>
 
 namespace txl
 {
@@ -34,7 +33,4 @@ namespace txl
     {
         return system_error{errno};
     }
-
-    template<class T>
-    using system_result = result<system_error, T>;
 }

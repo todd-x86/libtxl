@@ -1,26 +1,24 @@
 #pragma once
 
+#include <txl/file_base.h>
 #include <txl/io.h>
 #include <txl/buffer_ref.h>
-#include <txl/result.h>
 #include <txl/system_error.h>
 #include <txl/on_error.h>
 #include <txl/handle_error.h>
 
 #include <string_view>
-#include <algorithm>
 
 #include <fcntl.h>
 #include <unistd.h>
 
 namespace txl
 {
-    class file : public reader
+    class file : public file_base
+               , public reader
                , public writer
     {
     private:
-        int fd_ = -1;
-
         static auto get_file_mode(std::string_view s, on_error::callback<system_error> on_err) -> int
         {
             // r = O_RDONLY
@@ -87,16 +85,7 @@ namespace txl
         }
 
         file(file const &) = delete;
-        file(file && f)
-            : file()
-        {
-            std::swap(f.fd_, fd_);
-        }
-
-        virtual ~file()
-        {
-            close(on_error::ignore{});
-        }
+        file(file && f) = default;
 
         auto open(std::string_view filename, std::string_view mode, on_error::callback<system_error> on_err = on_error::throw_on_error{}) -> void
         {
@@ -113,17 +102,6 @@ namespace txl
 
             fd_ = ::open(filename.data(), file_mode, DEFAULT_FILE_PERMS);
             handle_system_error(fd_, on_err);
-        }
-
-        auto is_open() const -> bool { return fd_ != -1; }
-
-        auto close(on_error::callback<system_error> on_err = on_error::throw_on_error{}) -> void
-        {
-            auto res = ::close(fd_);
-            if (handle_system_error(res, on_err))
-            {
-                fd_ = -1;
-            }
         }
 
         auto seek(off_t offset, seek_type st = seek_set, on_error::callback<system_error> on_err = on_error::throw_on_error{}) -> off_t
