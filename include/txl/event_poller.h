@@ -60,34 +60,37 @@ namespace txl
         virtual auto size() const -> size_t = 0;
     };
 
-    struct event_view final
+    struct event_data : private ::epoll_event
     {
-    private:
-        ::epoll_event const & event_;
-    public:
-        event_view(::epoll_event const & e)
-            : event_(e)
-        {
-        }
-
-        auto events() const -> event_type { return static_cast<event_type>(event_.events); }
-        auto fd() const -> int { return event_.data.fd; }
+        auto events() const -> event_type { return static_cast<event_type>(::epoll_event::events); }
+        auto fd() const -> int { return data.fd; }
     };
 
     template<size_t S>
     class event_array final : public event_buffer
     {
     private:
-        std::array<::epoll_event, S> data_;
+        using container_type = std::array<event_data, S>;
+        container_type data_;
     public:
-        auto operator[](size_t index) const -> event_view
+        using iterator = container_type::iterator;
+        using const_iterator = container_type::const_iterator;
+
+        auto begin() -> iterator { return data_.begin(); }
+        auto end() -> iterator { return data_.end(); }
+        auto begin() const -> const_iterator { return data_.begin(); }
+        auto end() const -> const_iterator { return data_.end(); }
+        auto cbegin() const -> const_iterator { return data_.cbegin(); }
+        auto cend() const -> const_iterator { return data_.cend(); }
+
+        auto operator[](size_t index) const -> event_data const &
         {
-            return event_view{data_[index]};
+            return data_[index];
         }
 
         auto epoll_buffer() -> ::epoll_event * override
         {
-            return &data_[0];
+            return reinterpret_cast<::epoll_event *>(&data_[0]);
         }
 
         auto size() const -> size_t override
@@ -99,12 +102,28 @@ namespace txl
     class event_vector final : public event_buffer
     {
     private:
-        std::vector<::epoll_event> data_;
+        using container_type = std::vector<event_data>;
+        container_type data_;
     public:
+        using iterator = container_type::iterator;
+        using const_iterator = container_type::const_iterator;
+
         event_vector() = default;
         event_vector(size_t size)
         {
             data_.resize(size);
+        }
+        
+        auto begin() -> iterator { return data_.begin(); }
+        auto end() -> iterator { return data_.end(); }
+        auto begin() const -> const_iterator { return data_.begin(); }
+        auto end() const -> const_iterator { return data_.end(); }
+        auto cbegin() const -> const_iterator { return data_.cbegin(); }
+        auto cend() const -> const_iterator { return data_.cend(); }
+        
+        auto operator[](size_t index) const -> event_data const &
+        {
+            return data_[index];
         }
 
         auto resize(size_t size) -> void
@@ -114,7 +133,7 @@ namespace txl
 
         auto epoll_buffer() -> ::epoll_event * override
         {
-            return &data_.front();
+            return reinterpret_cast<::epoll_event *>(&data_.front());
         }
 
         auto size() const -> size_t override

@@ -1,13 +1,15 @@
 #pragma once
 
 #include <txl/buffer_ref.h>
+#include <txl/event_poller.h>
 #include <txl/memory_pool.h>
 #include <txl/socket.h>
+#include <txl/file.h>
 #include <txl/on_error.h>
 
+#include <condition_variable>
 #include <functional>
-#include <list>
-#include <vector>
+#include <thread>
 
 namespace txl
 {
@@ -24,31 +26,43 @@ namespace txl
     class io_reactor
     {
     private:
-        struct io_event_data final
-        {
-            io_event on_io_;
-        };
+        memory_pool buf_in_;
+        event_poller poller_;
+        std::thread io_thread_{};
 
-        memory_pool in_buf_;
-        memory_pool out_buf_;
-        event_poller poller_{};
-        std::list<io_event> events_;
+        auto io_thread_loop() -> void
+        {
+            auto ev = txl::event_vector{30};
+            while (true)
+            {
+                auto num_available = poller_.poll(ev);
+                if (num_available > 0)
+                {
+                    //for (
+                }
+            }
+        }
     public:
-        io_reactor(io_reactor_params && params)
-            : in_buf_(params.in_buffer_num_pages_, params.in_buffer_page_size_)
-            , out_buf_(params.out_buffer_num_pages_, params.out_buffer_page_size_)
+        io_reactor()
+            : buf_in_(16, 4096)
         {
         }
 
-        auto add_reader(int fd, io_event on_data, on_error::callback<system_error> on_err = on_error::throw_on_error{}) -> void
+        auto start() -> void
         {
-            events_.push_back(on_data);
-            poller_.add(fd, event_poller::in | event_poller::out | event_poller::error, &events_.back(), on_err);
+            //if (
         }
 
-        auto begin_write(size_t num_bytes) -> buffer_ref
+        auto stop() -> void
         {
-            
+        }
+
+        auto join() -> void
+        {
+        }
+
+        auto read_async(txl::file & file, size_t num_bytes, io_event on_data) -> void
+        {
         }
     };
 }

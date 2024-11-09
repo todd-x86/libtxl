@@ -178,4 +178,21 @@ namespace txl
             return sa;
         }
     };
+
+    struct tcp_socket : socket
+    {
+        tcp_socket(bool open_socket = false, on_error::callback<system_error> on_err = on_error::throw_on_error{})
+            : socket()
+        {
+            if (open_socket)
+            {
+                open(on_err);
+            }
+        }
+
+        auto open(on_error::callback<system_error> on_err = on_error::throw_on_error{}) -> bool
+        {
+            return socket::open(socket::internet, socket::stream, 0, on_err);
+        }
+    };
 }
