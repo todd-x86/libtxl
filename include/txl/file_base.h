@@ -31,7 +31,10 @@ namespace txl
 
         virtual ~file_base()
         {
-            close(on_error::ignore{});
+            if (is_open())
+            {
+                close(on_error::ignore{});
+            }
         }
 
         auto operator=(file_base const &) -> file_base & = delete;

@@ -104,11 +104,28 @@ namespace txl
             handle_system_error(fd_, on_err);
         }
 
+        auto tell(on_error::callback<system_error> on_err = on_error::throw_on_error{}) -> off_t
+        {
+            return seek(0, seek_current, on_err);
+        }
+
         auto seek(off_t offset, seek_type st = seek_set, on_error::callback<system_error> on_err = on_error::throw_on_error{}) -> off_t
         {
             auto res = ::lseek(fd_, offset, static_cast<int>(st));
             handle_system_error(res, on_err);
             return res;
+        }
+
+        auto seekable_size(on_error::callback<system_error> on_err = on_error::throw_on_error{}) -> size_t
+        {
+            // Record position and seek to end
+            auto pos = tell(on_err);
+            auto end_pos = seek(0, seek_end, on_err);
+
+            // Reset back
+            seek(pos, seek_set, on_err);
+
+            return static_cast<size_t>(end_pos);
         }
     };
 }

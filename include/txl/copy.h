@@ -3,6 +3,7 @@
 #include <txl/buffer_ref.h>
 #include <txl/io.h>
 #include <txl/on_error.h>
+#include <txl/size_policy.h>
 #include <txl/system_error.h>
 
 #include <algorithm>
@@ -11,54 +12,7 @@
 
 namespace txl
 {
-    struct size_policy
-    {
-        size_t value;
-
-        size_policy(size_t i)
-            : value(i)
-        {
-        }
-
-        auto process(size_t requested, size_t actual) -> void
-        {
-            if (actual >= value)
-            {
-                value = 0;
-            }
-            else
-            {
-                value -= actual;
-            }
-        }
-
-        auto is_complete() const -> bool
-        {
-            return value == 0;
-        }
-    };
-
-    struct exactly final : size_policy
-    {
-    };
-    
-    struct at_most final : size_policy
-    {
-        bool maybe_eof_ = false;
-
-        auto process(size_t requested, size_t actual) -> void
-        {
-            maybe_eof_ = (requested > actual);
-            size_policy::process(requested, actual);
-        }
-
-        auto is_complete() const -> bool
-        {
-            return value == 0 or maybe_eof_;
-        }
-    };
-
-    template<class SizePolicy>
+    template<class SizePolicy, class = std::enable_if_t<std::is_base_of_v<size_policy, SizePolicy>>>
     auto copy(reader & src, writer & dst, buffer_ref copy_buf, SizePolicy bytes_to_read, on_error::callback<system_error> on_err = on_error::throw_on_error{}) -> size_t
     {
         size_t total_read = 0;
