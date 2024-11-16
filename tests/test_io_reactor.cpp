@@ -24,7 +24,7 @@ TXL_UNIT_TEST(TestIoReactor)
     //auto buf = co_await io.read_async(f, 64);
 
     auto res = io.read_async(f, f.seekable_size(), [](auto buf) {
-        //std::cout << "GOT DATA " << buf.size() << " bytes" << std::endl;
+        std::cout << "GOT DATA " << buf.size() << " bytes" << std::endl;
     });
 
     res.wait();

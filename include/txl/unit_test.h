@@ -98,6 +98,16 @@ namespace txl
                 throw assertion_error("assertion failed");
             }
         }
+        
+        template<class ExpectedValue, class ActualValue>
+        void assert_not_equal(ExpectedValue const & expected, ActualValue const & actual)
+        {
+            if ((expected == static_cast<ExpectedValue const &>(actual)))
+            {
+                error_buf_ << "assert_not_equal: " << test_printer{expected} << " (expected) == " << test_printer{actual} << " (actual)";
+                throw assertion_error("assertion failed");
+            }
+        }
 
         auto _set_error(std::string_view msg)
         {
