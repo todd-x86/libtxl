@@ -106,7 +106,25 @@ namespace txl
     class threading_unit_test : public threading_unit_test_base
     {
     private:
+        std::function<void()> pre_test_;
         std::function<void()> test_body_;
+        std::function<void()> post_test_;
+        
+        auto pre_test() -> void override
+        {
+            if (pre_test_)
+            {
+                pre_test_();
+            }
+        }
+
+        auto post_test() -> void override
+        {
+            if (post_test_)
+            {
+                post_test_();
+            }
+        }
         
         auto thread_main() -> void override
         {
@@ -116,6 +134,16 @@ namespace txl
         threading_unit_test(std::function<void()> test_body)
             : test_body_(test_body)
         {
+        }
+
+        auto pre_test(std::function<void()> test) -> void
+        {
+            pre_test_ = test;
+        }
+
+        auto post_test(std::function<void()> test) -> void
+        {
+            post_test_ = test;
         }
     };
 }
