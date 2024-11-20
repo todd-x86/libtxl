@@ -35,6 +35,12 @@ namespace txl
 #endif
     };
 
+    inline auto operator|(event_type x, event_type y) -> event_type
+    {
+        auto xy = static_cast<uint32_t>(x) | static_cast<uint32_t>(y);
+        return static_cast<event_type>(xy);
+    }
+
     class event_tag final
     {
         friend class event_poller;
