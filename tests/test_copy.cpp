@@ -16,7 +16,7 @@ private:
     size_t read_ = 0;
     size_t max_;
 protected:
-    auto read_impl(txl::buffer_ref buf, txl::on_error::callback<txl::system_error> on_err) -> size_t override
+    auto read_impl(txl::buffer_ref buf) -> txl::result<size_t> override
     {
         auto it = txl::make_circular_iterator(std::begin(NUMBERS), std::end(NUMBERS));
         auto to_copy = std::min(max_ - read_, buf.size());
@@ -37,7 +37,7 @@ private:
     size_t written_ = 0;
     size_t max_;
 protected:
-    auto write_impl(txl::buffer_ref buf, txl::on_error::callback<txl::system_error> on_err) -> size_t override
+    auto write_impl(txl::buffer_ref buf) -> txl::result<size_t> override
     {
         std::copy_n(reinterpret_cast<char const *>(buf.begin()), buf.size(), std::back_inserter(available_));
         return buf.size();
@@ -58,7 +58,7 @@ TXL_UNIT_TEST(copy_read)
     auto rd = dummy_reader{100};
     auto wr = dummy_writer{100};
 
-    auto copied = txl::copy(rd, wr, txl::exactly{11});
+    auto copied = txl::copy(rd, wr, txl::exactly{11}).or_throw();
     assert_equal(copied, 11);
     {
         auto expected = txl::buffer_ref{"01234567890"sv};

@@ -10,18 +10,18 @@ TXL_UNIT_TEST(TestEventTimerSteadyClock)
     auto t = txl::event_timer{};
     auto ev = txl::event_array<4>{};
 
-    auto t1 = std::chrono::steady_clock::now() + std::chrono::milliseconds{50};
+    auto t1 = std::chrono::steady_clock::now() + std::chrono::milliseconds{10};
 
-    p.open();
-    t.open(txl::event_timer::steady_clock);
-    t.set_time(t1);
+    p.open().or_throw();
+    t.open(txl::event_timer::steady_clock).or_throw();
+    t.set_time(t1).or_throw();
 
-    p.add(t.fd(), txl::event_type::in | txl::event_type::out);
-    auto num_polled = p.poll(ev);
+    p.add(t.fd(), txl::event_type::in | txl::event_type::out).or_throw();
+    auto num_polled = p.poll(ev, std::chrono::milliseconds{10}).or_throw();
     assert_equal(num_polled, 1);
     assert_equal(ev[0].fd(), t.fd());
 
-    p.close();
+    p.close().or_throw();
 }
 
 TXL_UNIT_TEST(TestEventTimerSystemClock)
@@ -30,18 +30,18 @@ TXL_UNIT_TEST(TestEventTimerSystemClock)
     auto t = txl::event_timer{};
     auto ev = txl::event_array<4>{};
 
-    auto t1 = std::chrono::system_clock::now() + std::chrono::milliseconds{50};
+    auto t1 = std::chrono::system_clock::now() + std::chrono::milliseconds{10};
 
-    p.open();
-    t.open(txl::event_timer::system_clock);
-    t.set_time(t1);
+    p.open().or_throw();
+    t.open(txl::event_timer::system_clock).or_throw();
+    t.set_time(t1).or_throw();
 
-    p.add(t.fd(), txl::event_type::in | txl::event_type::out);
-    auto num_polled = p.poll(ev);
+    p.add(t.fd(), txl::event_type::in | txl::event_type::out).or_throw();
+    auto num_polled = p.poll(ev, std::chrono::milliseconds{10}).or_throw();
     assert_equal(num_polled, 1);
     assert_equal(ev[0].fd(), t.fd());
 
-    p.close();
+    p.close().or_throw();
 }
 
 TXL_UNIT_TEST(TestEventTimerLooping)
@@ -50,20 +50,20 @@ TXL_UNIT_TEST(TestEventTimerLooping)
     auto t = txl::event_timer{};
     auto ev = txl::event_array<4>{};
 
-    auto t1 = std::chrono::system_clock::now() + std::chrono::milliseconds{50};
+    auto t1 = std::chrono::system_clock::now() + std::chrono::milliseconds{10};
 
-    p.open();
-    t.open(txl::event_timer::system_clock);
-    t.set_time(t1, std::chrono::milliseconds{50});
+    p.open().or_throw();
+    t.open(txl::event_timer::system_clock).or_throw();
+    t.set_time(t1, std::chrono::milliseconds{10}).or_throw();
 
-    p.add(t.fd(), txl::event_type::in | txl::event_type::out);
+    p.add(t.fd(), txl::event_type::in | txl::event_type::out).or_throw();
     for (auto i = 0; i < 3; ++i)
     {
-        auto num_polled = p.poll(ev);
+        auto num_polled = p.poll(ev, std::chrono::milliseconds{10}).or_throw();
         assert_equal(num_polled, 1);
         assert_equal(ev[0].fd(), t.fd());
     }
-    p.close();
+    p.close().or_throw();
 }
 
 TXL_RUN_TESTS()

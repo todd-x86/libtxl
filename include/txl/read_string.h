@@ -2,7 +2,7 @@
 
 #include <txl/copy.h>
 #include <txl/io.h>
-#include <txl/on_error.h>
+#include <txl/result.h>
 #include <txl/stream_writer.h>
 #include <txl/system_error.h>
 
@@ -14,16 +14,19 @@
 namespace txl
 {
     template<class SizePolicy, class = std::enable_if_t<std::is_base_of_v<size_policy, SizePolicy>>>
-    auto read_string(reader & rd, SizePolicy num_bytes, on_error::callback<system_error> on_err = on_error::throw_on_error{}) -> std::string
+    auto read_string(reader & rd, SizePolicy num_bytes) -> result<std::string>
     {
         std::ostringstream ss{};
         stream_writer adapter{ss};
-        copy(rd, adapter, num_bytes, on_err);
+        if (auto res = copy(rd, adapter, num_bytes); !res)
+        {
+            return res.error();
+        }
         return ss.str();
     }
     
-    auto read_string(reader & rd, size_t num_bytes, on_error::callback<system_error> on_err = on_error::throw_on_error{}) -> std::string
+    auto read_string(reader & rd, size_t num_bytes) -> result<std::string>
     {
-        return read_string(rd, exactly{num_bytes}, on_err);
+        return read_string(rd, exactly{num_bytes});
     }
 }

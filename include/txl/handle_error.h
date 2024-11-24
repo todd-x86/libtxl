@@ -1,17 +1,38 @@
 #pragma once
 
-#include <txl/on_error.h>
+#include <txl/result.h>
 #include <txl/system_error.h>
+
+#include <type_traits>
 
 namespace txl
 {
-    inline auto handle_system_error(int res, on_error::callback<system_error> & on_err) -> bool
+    inline auto handle_system_error(int res) -> result<void>
     {
         if (res == -1)
         {
-            on_err(get_system_error());
-            return false;
+            return {get_system_error()};
         }
-        return true;
+        return {};
+    }
+    
+    template<class T>
+    inline auto handle_system_error(int res, T && value) -> result<std::remove_reference_t<T>>
+    {
+        if (res == -1)
+        {
+            return {get_system_error()};
+        }
+        return {std::move(value)};
+    }
+    
+    template<class T>
+    inline auto handle_system_error(int res, T const & value) -> result<std::remove_reference_t<T>>
+    {
+        if (res == -1)
+        {
+            return {get_system_error()};
+        }
+        return {value};
     }
 }

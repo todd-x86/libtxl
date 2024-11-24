@@ -3,7 +3,7 @@
 #include <txl/buffer_ref.h>
 #include <txl/file_base.h>
 #include <txl/io.h>
-#include <txl/on_error.h>
+#include <txl/result.h>
 #include <txl/handle_error.h>
 #include <txl/system_error.h>
 #include <txl/socket_address.h>
@@ -18,31 +18,40 @@ namespace txl
                  , public writer
     {
     protected:
-        auto read_impl(buffer_ref buf, on_error::callback<system_error> on_err) -> size_t override
+        auto read_impl(buffer_ref buf) -> result<size_t> override
         {
-            return read(buf, io_flags::none, on_err).size();
+            auto res = read(buf, io_flags::none);
+            if (!res)
+            {
+                return res.error();
+            }
+            return res->size();
         }
 
-        auto write_impl(buffer_ref buf, on_error::callback<system_error> on_err) -> size_t override
+        auto write_impl(buffer_ref buf) -> result<size_t> override
         {
-            return write(buf, io_flags::none, on_err).size();
+            auto res = write(buf, io_flags::none);
+            if (!res)
+            {
+                return res.error();
+            }
+            return res->size();
         }
         
         template<class T>
-        auto get_option(int level, int optname, on_error::callback<system_error> on_err) const -> T
+        auto get_option(int level, int optname) const -> result<T>
         {
             auto value_len = static_cast<socklen_t>(sizeof(T));
             auto value = T{};
             auto res = ::getsockopt(fd_, level, optname, static_cast<void *>(&value), &value_len);
-            handle_system_error(res, on_err);
-            return value;
+            return handle_system_error(res, value);
         }
 
         template<class T>
-        auto set_option(int level, int optname, T const & value, on_error::callback<system_error> on_err) -> bool
+        auto set_option(int level, int optname, T const & value) -> result<void>
         {
             auto res = ::setsockopt(fd_, level, optname, reinterpret_cast<void const *>(&value), static_cast<socklen_t>(sizeof(T)));
-            return handle_system_error(res, on_err);
+            return handle_system_error(res);
         }
 
         socket(int fd)
@@ -80,119 +89,122 @@ namespace txl
         };
 
         socket() = default;
-        socket(address_family af, socket_type t, int protocol = 0, on_error::callback<system_error> on_err = on_error::throw_on_error{})
+        socket(address_family af, socket_type t, int protocol = 0)
             : socket()
         {
-            open(af, t, protocol, on_err);
+            open(af, t, protocol).or_throw();
         }
 
         socket(socket const &) = delete;
         socket(socket && s) = default;
 
-        auto open(address_family af, socket_type t, int protocol = 0, on_error::callback<system_error> on_err = on_error::throw_on_error{}) -> bool
+        auto open(address_family af, socket_type t, int protocol = 0) -> result<void>
         {
+            if (is_open())
+            {
+                return get_system_error(EBUSY);
+            }
+
             fd_ = ::socket(static_cast<int>(af), static_cast<int>(t), protocol);
-            return handle_system_error(fd_, on_err);
+            return handle_system_error(fd_);
         }
         
         using reader::read;
 
-        auto read(buffer_ref buf, io_flags f, on_error::callback<system_error> on_err) -> buffer_ref
+        auto read(buffer_ref buf, io_flags f) -> result<buffer_ref>
         {
             auto res = ::recv(fd_, buf.data(), buf.size(), static_cast<int>(f));
-            if (handle_system_error(res, on_err))
+            if (auto err = handle_system_error(res); !err)
             {
-                return buf.slice(0, res);
+                return err.error();
             }
-            return {};
+            return buf.slice(0, res);
         }
 
         using writer::write;
 
-        auto write(buffer_ref buf, io_flags f, on_error::callback<system_error> on_err) -> buffer_ref
+        auto write(buffer_ref buf, io_flags f) -> result<buffer_ref>
         {
             auto res = ::send(fd_, buf.data(), buf.size(), static_cast<int>(f));
-            if (handle_system_error(res, on_err))
+            if (auto err = handle_system_error(res); !err)
             {
-                return buf.slice(0, res);
+                return err.error();
             }
-            return {};
+            return buf.slice(0, res);
         }
 
-        auto shutdown(on_error::callback<system_error> on_err = on_error::throw_on_error{}) -> bool
+        auto shutdown() -> result<void>
         {
             auto res = ::shutdown(fd_, SHUT_RDWR);
-            return handle_system_error(res, on_err);
+            return handle_system_error(res);
         }
 
-        auto connect(socket_address const & sa, on_error::callback<system_error> on_err = on_error::throw_on_error{}) -> bool
+        auto connect(socket_address const & sa) -> result<void>
         {
             auto res = ::connect(fd_, reinterpret_cast<::sockaddr const *>(sa.sockaddr()), sa.size());
-            return handle_system_error(res, on_err);
+            return handle_system_error(res);
         }
 
-        auto accept(socket_address & out_addr, accept_flags flags = accept_flags::none, on_error::callback<system_error> on_err = on_error::throw_on_error{}) -> socket
+        auto accept(socket_address & out_addr, accept_flags flags = accept_flags::none) -> result<socket>
         {
             ::socklen_t out_sockaddr_len = sizeof(out_addr.addr_);
             auto res = ::accept4(fd_, reinterpret_cast<::sockaddr *>(&out_addr.addr_), &out_sockaddr_len, static_cast<int>(flags));
-            if (handle_system_error(res, on_err))
+            if (auto err = handle_system_error(res); !err)
             {
-                return socket(res);
+                return err.error();
             }
-            return {};
+            return socket(res);
         }
         
-        auto accept(accept_flags flags = accept_flags::none, on_error::callback<system_error> on_err = on_error::throw_on_error{}) -> socket
+        auto accept(accept_flags flags = accept_flags::none) -> result<socket>
         {
             socket_address sa{};
-            return accept(sa, flags, on_err);
+            return accept(sa, flags);
         }
 
-        auto bind(socket_address const & sa, on_error::callback<system_error> on_err = on_error::throw_on_error{}) -> bool
+        auto bind(socket_address const & sa) -> result<void>
         {
             auto res = ::bind(fd_, reinterpret_cast<::sockaddr const *>(sa.sockaddr()), sa.size());
-            return handle_system_error(res, on_err);
+            return handle_system_error(res);
         }
 
-        auto listen(int backlog, on_error::callback<system_error> on_err = on_error::throw_on_error{}) -> bool
+        auto listen(int backlog) -> result<void>
         {
             auto res = ::listen(fd_, backlog);
-            return handle_system_error(res, on_err);
+            return handle_system_error(res);
         }
 
-        auto get_remote_address(on_error::callback<system_error> on_err = on_error::throw_on_error{}) const -> socket_address
+        auto get_remote_address() const -> result<socket_address>
         {
             socket_address sa{};
             ::socklen_t addr_sz = sa.size();
             auto res = ::getpeername(fd_, reinterpret_cast<::sockaddr *>(&sa.addr_), &addr_sz);
-            handle_system_error(res, on_err);
-            return sa;
+            return handle_system_error(res, sa);
         }
 
-        auto get_local_address(on_error::callback<system_error> on_err = on_error::throw_on_error{}) const -> socket_address
+        auto get_local_address() const -> result<socket_address>
         {
             socket_address sa{};
             ::socklen_t addr_sz = sa.size();
             auto res = ::getsockname(fd_, reinterpret_cast<::sockaddr *>(&sa.addr_), &addr_sz);
-            handle_system_error(res, on_err);
-            return sa;
+            return handle_system_error(res, sa);
         }
     };
 
     struct tcp_socket : socket
     {
-        tcp_socket(bool open_socket = false, on_error::callback<system_error> on_err = on_error::throw_on_error{})
+        tcp_socket(bool open_socket = false)
             : socket()
         {
             if (open_socket)
             {
-                open(on_err);
+                open().or_throw();
             }
         }
 
-        auto open(on_error::callback<system_error> on_err = on_error::throw_on_error{}) -> bool
+        auto open() -> result<void>
         {
-            return socket::open(socket::internet, socket::stream, 0, on_err);
+            return socket::open(socket::internet, socket::stream, 0);
         }
     };
 }

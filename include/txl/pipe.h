@@ -4,7 +4,7 @@
 #include <txl/file_base.h>
 #include <txl/handle_error.h>
 #include <txl/io.h>
-#include <txl/on_error.h>
+#include <txl/result.h>
 #include <txl/system_error.h>
 
 #include <cerrno>
@@ -18,24 +18,16 @@ namespace txl
     {
         friend class pipe_connector;
     private:
-        auto read_impl(buffer_ref buf, on_error::callback<system_error> on_err) -> size_t override
+        auto read_impl(buffer_ref buf) -> result<size_t> override
         {
             auto bytes_read = ::read(fd_, buf.data(), buf.size());
-            if (handle_system_error(bytes_read, on_err))
-            {
-                return bytes_read;
-            }
-            return 0;
+            return handle_system_error(bytes_read, static_cast<size_t>(bytes_read));
         }
 
-        auto write_impl(buffer_ref buf, on_error::callback<system_error> on_err) -> size_t override
+        auto write_impl(buffer_ref buf) -> result<size_t> override
         {
             auto bytes_written = ::write(fd_, buf.data(), buf.size());
-            if (handle_system_error(bytes_written, on_err))
-            {
-                return bytes_written;
-            }
-            return 0;
+            return handle_system_error(bytes_written, static_cast<size_t>(bytes_written));
         }
     protected:
         pipe(int fd)
@@ -60,22 +52,22 @@ namespace txl
         pipe input_{};
         pipe output_{};
     public:
-        auto open(on_error::callback<system_error> on_err = on_error::throw_on_error{}) -> void
+        auto open() -> result<void>
         {
             if (input_.is_open() or output_.is_open())
             {
-                on_err(EBUSY);
-                return;
+                return get_system_error(EBUSY);
             }
 
             int fds[2];
             // TODO: support flags
-            auto res = ::pipe2(fds, 0);
-            if (handle_system_error(res, on_err))
+            auto res = handle_system_error(::pipe2(fds, 0));
+            if (res)
             {
                 input_ = pipe{fds[0]};
                 output_ = pipe{fds[1]};
             }
+            return res;
         }
 
         auto input() -> pipe & { return input_; }

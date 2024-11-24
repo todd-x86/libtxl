@@ -10,10 +10,10 @@ TXL_UNIT_TEST(TestOpenClose)
 
     assert_false(p.is_open());
     
-    p.open();
+    p.open().or_throw();
     assert_true(p.is_open());
 
-    p.close();
+    p.close().or_throw();
     assert_false(p.is_open());
 }
 
@@ -22,12 +22,12 @@ TXL_UNIT_TEST(TestPollEmpty)
     auto p = txl::event_poller{};
     auto events = txl::event_array<10>{};
     
-    txl::system_error err{};
-    p.poll(events, std::chrono::milliseconds{0}, txl::on_error::capture(err));
-    assert_equal(err.code(), EBADF);
+    auto err = p.poll(events, std::chrono::milliseconds{0});
+    assert_true(err.is_error());
+    assert_equal(err.error().value(), EBADF);
 
-    p.open();
-    auto num_available = p.poll(events, std::chrono::milliseconds{0});
+    p.open().or_throw();
+    auto num_available = p.poll(events, std::chrono::milliseconds{0}).or_throw();
     assert_equal(num_available, 0);
 }
 
@@ -36,19 +36,19 @@ TXL_UNIT_TEST(TestPipe)
     auto p = txl::event_poller{};
     auto events = txl::event_array<10>{};
     
-    p.open();
+    p.open().or_throw();
 
     auto c = txl::pipe_connector{};
-    c.open();
+    c.open().or_throw();
     assert_true(c.input().is_open());
     assert_true(c.output().is_open());
-    p.add(c.input().fd(), txl::event_type::in);
+    p.add(c.input().fd(), txl::event_type::in).or_throw();
 
     auto s = std::string_view{"Hello"};
     auto buf = txl::buffer_ref{s};
-    c.output().write(buf);
+    c.output().write(buf).or_throw();
         
-    auto num_available = p.poll(events, std::chrono::milliseconds{0});
+    auto num_available = p.poll(events, std::chrono::milliseconds{0}).or_throw();
     assert_equal(num_available, 1);
     assert_equal(events[0].events(), txl::event_type::in);
     assert_equal(events[0].fd(), c.input().fd());

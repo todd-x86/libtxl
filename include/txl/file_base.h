@@ -1,7 +1,7 @@
 #pragma once
 
 #include <txl/system_error.h>
-#include <txl/on_error.h>
+#include <txl/result.h>
 #include <txl/handle_error.h>
 
 #include <unistd.h>
@@ -33,7 +33,7 @@ namespace txl
         {
             if (is_open())
             {
-                close(on_error::ignore{});
+                close();
             }
         }
 
@@ -51,13 +51,14 @@ namespace txl
 
         auto is_open() const -> bool { return fd_ != -1; }
 
-        auto close(on_error::callback<system_error> on_err = on_error::throw_on_error{}) -> void
+        auto close() -> result<void>
         {
-            auto res = ::close(fd_);
-            if (handle_system_error(res, on_err))
+            auto result = handle_system_error(::close(fd_));
+            if (result)
             {
                 fd_ = -1;
             }
+            return result;
         }
     };
 }

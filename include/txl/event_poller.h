@@ -2,7 +2,7 @@
 
 #include <txl/file_base.h>
 #include <txl/handle_error.h>
-#include <txl/on_error.h>
+#include <txl/result.h>
 #include <txl/system_error.h>
 
 #include <sys/epoll.h>
@@ -154,64 +154,63 @@ namespace txl
         event_poller(event_poller const &) = delete;
         event_poller(event_poller && p) = default;
 
-        auto open(on_error::callback<system_error> on_err = on_error::throw_on_error{}) -> void
+        auto open() -> result<void>
         {
             if (is_open())
             {
-                return;
+                return {};
             }
 
             fd_ = ::epoll_create1(0);
-            handle_system_error(fd_, on_err);
+            return handle_system_error(fd_);
         }
 
-        auto add(int fd, event_type flags, on_error::callback<system_error> on_err = on_error::throw_on_error{}) -> void
+        auto add(int fd, event_type flags) -> result<void>
         {
             auto t = event_tag{};
             t.fd(fd);
             
-            add(fd, flags, t, on_err);
+            return add(fd, flags, t);
         }
 
-        auto add(int fd, event_type flags, event_tag tag, on_error::callback<system_error> on_err = on_error::throw_on_error{}) -> void
+        auto add(int fd, event_type flags, event_tag tag) -> result<void>
         {
             auto event_details = ::epoll_event{};
             event_details.events = static_cast<int>(flags);
             event_details.data = tag.data_;
             
             auto res = ::epoll_ctl(fd_, EPOLL_CTL_ADD, fd, &event_details);
-            handle_system_error(res, on_err);
+            return handle_system_error(res);
         }
         
-        auto modify(int fd, event_type flags, on_error::callback<system_error> on_err = on_error::throw_on_error{}) -> void
+        auto modify(int fd, event_type flags) -> result<void>
         {
             auto t = event_tag{};
             t.fd(fd);
             
-            modify(fd, flags, t, on_err);
+            return modify(fd, flags, t);
         }
 
-        auto modify(int fd, event_type flags, event_tag tag, on_error::callback<system_error> on_err = on_error::throw_on_error{}) -> void
+        auto modify(int fd, event_type flags, event_tag tag) -> result<void>
         {
             auto event_details = ::epoll_event{};
             event_details.events = static_cast<int>(flags);
             event_details.data = tag.data_;
             auto res = ::epoll_ctl(fd_, EPOLL_CTL_MOD, fd, &event_details);
-            handle_system_error(res, on_err);
+            return handle_system_error(res);
         }
         
-        auto remove(int fd, on_error::callback<system_error> on_err = on_error::throw_on_error{}) -> void
+        auto remove(int fd) -> result<void>
         {
             auto res = ::epoll_ctl(fd_, EPOLL_CTL_DEL, fd, nullptr);
-            handle_system_error(res, on_err);
+            return handle_system_error(res);
         }
 
-        auto poll(event_buffer & buf, std::optional<std::chrono::milliseconds> timeout = std::nullopt, on_error::callback<system_error> on_err = on_error::throw_on_error{}) -> int
+        auto poll(event_buffer & buf, std::optional<std::chrono::milliseconds> timeout = std::nullopt) -> result<int>
         {
             // TODO: add sigset mask support
             auto res = ::epoll_pwait(fd_, buf.epoll_buffer(), buf.size(), timeout.value_or(std::chrono::milliseconds{-1}).count(), nullptr);
-            handle_system_error(res, on_err);
-            return res;
+            return handle_system_error(res, res);
         }
     };
 }

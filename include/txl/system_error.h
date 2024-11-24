@@ -1,36 +1,17 @@
 #pragma once
 
-#include <ostream>
-#include <string_view>
+#include <system_error>
 #include <errno.h>
-#include <string.h>
 
 namespace txl
 {
-    class system_error
+    inline auto get_system_error(int err) -> std::error_code
     {
-    private:
-        int code_ = 0;
-    public:
-        system_error() = default;
-        system_error(int code)
-            : code_(code)
-        {
-        }
-
-        auto is_error() const -> bool { return code_ != 0; }
-        auto code() const -> int { return code_; }
-        auto message() const -> std::string_view { return {::strerror(code_)}; }
-    };
-
-    auto operator<<(std::ostream & os, system_error err) -> std::ostream &
-    {
-        os << err.message();
-        return os;
+        return {err, std::system_category()};
     }
-
-    inline auto get_system_error() -> system_error
+    
+    inline auto get_system_error() -> std::error_code
     {
-        return system_error{errno};
+        return get_system_error(errno);
     }
 }

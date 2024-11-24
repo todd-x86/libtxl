@@ -1,10 +1,11 @@
 #pragma once
 
+#include <txl/result.h>
 #include <txl/file_base.h>
 #include <txl/io.h>
 #include <txl/buffer_ref.h>
 #include <txl/system_error.h>
-#include <txl/on_error.h>
+#include <txl/result.h>
 #include <txl/handle_error.h>
 
 #include <string_view>
@@ -19,7 +20,7 @@ namespace txl
                , public writer
     {
     private:
-        static auto get_file_mode(std::string_view s, on_error::callback<system_error> on_err) -> int
+        static auto get_file_mode(std::string_view s) -> result<int>
         {
             // r = O_RDONLY
             // w = O_WRONLY | O_CREAT | O_TRUNC
@@ -46,28 +47,19 @@ namespace txl
                 }
             }
             
-            on_err(EINVAL);
-            return 0;
+            return get_system_error(EINVAL);
         }
 
-        auto read_impl(buffer_ref buf, on_error::callback<system_error> on_err) -> size_t override
+        auto read_impl(buffer_ref buf) -> result<size_t> override
         {
             auto bytes_read = ::read(fd_, buf.data(), buf.size());
-            if (handle_system_error(bytes_read, on_err))
-            {
-                return bytes_read;
-            }
-            return 0;
+            return handle_system_error(bytes_read, static_cast<size_t>(bytes_read));
         }
 
-        auto write_impl(buffer_ref buf, on_error::callback<system_error> on_err) -> size_t override
+        auto write_impl(buffer_ref buf) -> result<size_t> override
         {
             auto bytes_written = ::write(fd_, buf.data(), buf.size());
-            if (handle_system_error(bytes_written, on_err))
-            {
-                return bytes_written;
-            }
-            return 0;
+            return handle_system_error(bytes_written, static_cast<size_t>(bytes_written));
         }
     public:
         enum seek_type : int
@@ -78,54 +70,69 @@ namespace txl
         };
 
         file() = default;
-        file(std::string_view filename, std::string_view mode, on_error::callback<system_error> on_open_err = on_error::throw_on_error{})
+        file(std::string_view filename, std::string_view mode)
             : file()
         {
-            open(filename, mode, on_open_err);
+            open(filename, mode).or_throw();
         }
 
         file(file const &) = delete;
         file(file && f) = default;
 
-        auto open(std::string_view filename, std::string_view mode, on_error::callback<system_error> on_err = on_error::throw_on_error{}) -> void
+        auto open(std::string_view filename, std::string_view mode) -> result<void>
         {
             static constexpr const int DEFAULT_FILE_PERMS = S_IRUSR | S_IWUSR | S_IRGRP;
 
             if (is_open())
             {
                 // Already in use
-                on_err({EACCES});
-                return;
+                return get_system_error(EACCES);
             }
 
-            auto file_mode = get_file_mode(mode, on_err);
+            auto file_mode = get_file_mode(mode);
+            if (!file_mode)
+            {
+                return file_mode.error();
+            }
 
-            fd_ = ::open(filename.data(), file_mode, DEFAULT_FILE_PERMS);
-            handle_system_error(fd_, on_err);
+            fd_ = ::open(filename.data(), *file_mode, DEFAULT_FILE_PERMS);
+            return handle_system_error(fd_);
         }
 
-        auto tell(on_error::callback<system_error> on_err = on_error::throw_on_error{}) -> off_t
+        auto tell() -> result<off_t>
         {
-            return seek(0, seek_current, on_err);
+            return seek(0, seek_current);
         }
 
-        auto seek(off_t offset, seek_type st = seek_set, on_error::callback<system_error> on_err = on_error::throw_on_error{}) -> off_t
+        auto seek(off_t offset, seek_type st = seek_set) -> result<off_t>
         {
             auto res = ::lseek(fd_, offset, static_cast<int>(st));
-            handle_system_error(res, on_err);
-            return res;
+            return handle_system_error(res, res);
         }
 
-        auto seekable_size(on_error::callback<system_error> on_err = on_error::throw_on_error{}) -> size_t
+        auto seekable_size() -> result<size_t>
         {
             // Record position and seek to end
-            auto pos = tell(on_err);
-            auto end_pos = seek(0, seek_end, on_err);
+            auto pos = tell();
+            if (!pos)
+            {
+                return pos.error();
+            }
+
+            auto end_pos = seek(0, seek_end);
+            if (!end_pos)
+            {
+                return end_pos.error();
+            }
 
             // Reset back
-            seek(pos, seek_set, on_err);
+            auto res = seek(*pos, seek_set);
+            if (!res)
+            {
+                return res.error();
+            }
 
-            return static_cast<size_t>(end_pos);
+            return static_cast<size_t>(*end_pos);
         }
     };
 }

@@ -109,6 +109,27 @@ namespace txl
             }
         }
 
+        template<class Exception, class Func>
+        void assert_throws(Func && func)
+        {
+            try
+            {
+                func();
+
+                error_buf_ << "assert_throws: no exception thrown";
+                throw assertion_error{"assertion failed"};
+            }
+            catch (Exception const & ex)
+            {
+                return;
+            }
+            catch (...)
+            {
+                error_buf_ << "assert_throws: different exception thrown";
+                throw assertion_error{"assertion failed"};
+            }
+        }
+
         auto _set_error(std::string_view msg)
         {
             error_buf_ << "exception thrown: " << msg;

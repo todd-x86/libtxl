@@ -1,7 +1,10 @@
 #pragma once
 
+#include <txl/buffer_ref.h>
 #include <txl/io.h>
+#include <txl/result.h>
 #include <ostream>
+#include <cstddef>
 
 namespace txl
 {
@@ -11,7 +14,7 @@ namespace txl
         std::ostream & os_;
     protected:
         // Returns buffer written
-        auto write_impl(buffer_ref buf, on_error::callback<system_error> on_err) -> size_t override
+        auto write_impl(buffer_ref buf) -> result<size_t> override
         {
             auto before = os_.tellp();
             os_.write(reinterpret_cast<char const *>(buf.begin()), buf.size());

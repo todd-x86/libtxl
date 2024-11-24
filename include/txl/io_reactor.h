@@ -5,7 +5,7 @@
 #include <txl/memory_pool.h>
 #include <txl/socket.h>
 #include <txl/file.h>
-#include <txl/on_error.h>
+#include <txl/result.h>
 
 #include <algorithm>
 #include <atomic>
@@ -90,7 +90,7 @@ namespace txl
                 auto to_read = std::min(static_cast<size_t>(4096), num_total_ - num_read_);
                 auto mem_buf = mem_pool.allocate(to_read);
 
-                auto bytes_read = file_.read(buffer_ref{mem_buf.data(), mem_buf.size()}.slice(0, to_read));
+                auto bytes_read = file_.read(buffer_ref{mem_buf.data(), mem_buf.size()}.slice(0, to_read)).or_throw();
                 
                 // TODO: Notify and close on another thread
                 on_data_(bytes_read);
@@ -130,7 +130,7 @@ namespace txl
                 // TODO: Notify and close on another thread
                 auto bytes_to_write = get_data_(buffer_ref{mem_buf.data(), mem_buf.size()}.slice(0, to_write));
                 
-                auto bytes_written = file_.write(buffer_ref{mem_buf.data(), mem_buf.size()}.slice(0, bytes_to_write));
+                auto bytes_written = file_.write(buffer_ref{mem_buf.data(), mem_buf.size()}.slice(0, bytes_to_write)).or_throw();
                 mem_buf.close();
 
                 num_written_ += bytes_written.size();
