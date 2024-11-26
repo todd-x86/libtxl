@@ -12,6 +12,11 @@
 
 namespace txl
 {
+    struct event_timer_data
+    {
+        uint64_t num_expirations;
+    };
+
     struct event_timer : file_base
     {
         enum timer_type
@@ -50,6 +55,13 @@ namespace txl
             auto timer_val = ::itimerspec{time::to_timespec(interval), time::to_timespec(tp)};
             auto res = ::timerfd_settime(fd_, TFD_TIMER_ABSTIME | TFD_TIMER_CANCEL_ON_SET, &timer_val, nullptr);
             return handle_system_error(res);
+        }
+
+        auto read() -> result<event_timer_data>
+        {
+            auto td = event_timer_data{};
+            auto res = ::read(fd_, &td.num_expirations, sizeof(td.num_expirations));
+            return handle_system_error(res, td);
         }
     };
 }
