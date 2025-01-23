@@ -45,10 +45,9 @@ namespace txl
     inline auto copy(reader & src, writer & dst, SizePolicy bytes_to_read) -> result<size_t>
     {
         // Allocate a temporary copy-buffer on the stack (4K at max)
-        auto buf_size = std::min(static_cast<size_t>(bytes_to_read.value), static_cast<size_t>(4096));
-        std::byte buf[buf_size];
+        std::byte buf[4096];
         
-        return copy(src, dst, buffer_ref{buf, buf_size}, bytes_to_read);
+        return copy(src, dst, buffer_ref{buf}, bytes_to_read);
     }
     
     inline auto copy(reader & src, writer & dst, buffer_ref copy_buf) -> result<size_t>

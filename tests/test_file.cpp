@@ -119,4 +119,24 @@ TXL_UNIT_TEST(file_seek)
     assert_equal(std::string_view{laugh}, std::string_view{"AHA!"});
 }
 
+TXL_UNIT_TEST(file_pread_pwrite)
+{
+    using namespace std::literals;
+
+    auto f = txl::file{"data.txt", "w+"};
+    assert_true(f.is_open());
+    assert_equal(0, f.tell().or_throw());
+
+    // Read at position
+    std::array<char, 32> betty_boop{};
+    assert_equal("Boop-boop-ba-doop"sv.size(), f.write("Boop-boop-ba-doop"sv).or_throw().size());
+    auto rd = f.read(10, txl::buffer_ref{betty_boop}).or_throw();
+    assert_equal("ba-doop"sv, rd.to_string_view());
+    
+    // Write and read at position
+    assert_equal("LOOP"sv.size(), f.write(13, "LOOP"sv).or_throw().size());
+    rd = f.read(10, txl::buffer_ref{betty_boop}.slice(0, 6)).or_throw();
+    assert_equal("ba-LOO"sv, rd.to_string_view());
+}
+
 TXL_RUN_TESTS()

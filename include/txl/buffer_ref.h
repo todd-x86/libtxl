@@ -37,6 +37,12 @@ namespace txl
         }
         
         template<size_t Size>
+        buffer_ref(char const (&s)[Size])
+            : buffer_ref(static_cast<void *>(const_cast<char *>(&s[0])), Size)
+        {
+        }
+        
+        template<size_t Size>
         buffer_ref(std::byte (&b)[Size])
             : buffer_ref(static_cast<void *>(&b[0]), Size)
         {
@@ -61,6 +67,18 @@ namespace txl
             : buffer_(buffer)
             , length_(length)
         {
+        }
+
+        template<class T>
+        static inline auto cast(T const & data) -> buffer_ref
+        {
+            return {reinterpret_cast<void *>(const_cast<T *>(&data)), sizeof(T)};
+        }
+        
+        template<class T>
+        static inline auto cast(T & data) -> buffer_ref
+        {
+            return {reinterpret_cast<void *>(&data), sizeof(T)};
         }
 
         auto compare(buffer_ref const & other) const -> int

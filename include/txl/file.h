@@ -99,6 +99,32 @@ namespace txl
             return handle_system_error(fd_);
         }
 
+        using reader::read;
+
+        auto read(off_t offset, buffer_ref buf) -> result<buffer_ref>
+        {
+            auto bytes_read = ::pread(fd_, buf.data(), buf.size(), offset);
+            auto res = handle_system_error(bytes_read, static_cast<size_t>(bytes_read));
+            if (not res)
+            {
+                return res.error();
+            }
+            return buf.slice(0, *res);
+        }
+
+        using writer::write;
+
+        auto write(off_t offset, buffer_ref buf) -> result<buffer_ref>
+        {
+            auto bytes_written = ::pwrite(fd_, buf.data(), buf.size(), offset);
+            auto res = handle_system_error(bytes_written, static_cast<size_t>(bytes_written));
+            if (not res)
+            {
+                return res.error();
+            }
+            return buf.slice(0, *res);
+        }
+
         auto tell() -> result<off_t>
         {
             return seek(0, seek_current);

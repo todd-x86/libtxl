@@ -48,7 +48,6 @@ namespace txl
         }
 
         result(result && v)
-            : result()
         {
             std::swap(flags_, v.flags_);
 
