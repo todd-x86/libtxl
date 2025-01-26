@@ -57,6 +57,11 @@ namespace txl
         {
             return {data(), size()};
         }
+        
+        auto clear()
+        {
+            (*this)[0] = static_cast<Char>(0);
+        }
 
         Char & operator[](size_t index)
         {
@@ -109,11 +114,6 @@ namespace txl
         {
             // Emulate a swap
             data.clear();
-        }
-
-        auto clear()
-        {
-            (*this)[0] = static_cast<Char>(0);
         }
         
         auto copy_from(Char const * str)
@@ -187,11 +187,6 @@ namespace txl
         {
             // Emulate a swap
             data.clear();
-        }
-
-        auto clear()
-        {
-            (*this)[0] = static_cast<Char>(0);
         }
 
         auto copy_from(Char const * str)

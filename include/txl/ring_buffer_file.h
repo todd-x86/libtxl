@@ -13,8 +13,8 @@
 namespace txl
 {
     /**
-     * [size:4]...[0000]  -- write a 0 to signal end of buffer
-     * no partial wrap-around allowed
+     * 0x00: [Offset:8][Size:8]
+     * 0x10: ...[EntrySize:4][Data...]...
      */
     class ring_buffer_file
     {

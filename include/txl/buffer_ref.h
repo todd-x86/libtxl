@@ -52,6 +52,11 @@ namespace txl
             : buffer_ref(static_cast<void *>(buffer), length)
         {
         }
+        
+        buffer_ref(std::byte const * buffer, size_t length)
+            : buffer_ref(const_cast<std::byte *>(buffer), length)
+        {
+        }
 
         buffer_ref(byte_vector & b)
             : buffer_ref(static_cast<void *>(b.data()), b.size())
@@ -60,6 +65,11 @@ namespace txl
         
         buffer_ref(byte_vector const & b)
             : buffer_ref(static_cast<void *>(const_cast<byte_vector &>(b).data()), b.size())
+        {
+        }
+        
+        buffer_ref(void const * buffer, size_t length)
+            : buffer_ref(const_cast<void *>(buffer), length)
         {
         }
 
@@ -132,15 +142,40 @@ namespace txl
             return slice(begin, length_);
         }
 
+        auto operator=(std::string_view s) -> buffer_ref
+        {
+            // TODO: is this bad design?
+            auto bytes_to_copy = std::min(s.size(), size());
+            auto src_data = reinterpret_cast<std::byte const *>(s.data());
+            std::copy(src_data, std::next(src_data, bytes_to_copy), begin()); 
+            return *this;
+        }
+        
+        auto operator[](size_t index) -> std::byte &
+        {
+            return *std::next(begin(), index);
+        }
+        
+        auto operator[](size_t index) const -> std::byte const &
+        {
+            return *std::next(begin(), index);
+        }
+
         auto to_string_view() const -> std::string_view { return {static_cast<char const *>(data()), size()}; }
+        
+        template<class T>
+        auto to_alias(size_t byte_offset = 0) -> T * { return static_cast<T *>(std::next(begin(), byte_offset)); }
+        
+        template<class T>
+        auto to_alias(size_t byte_offset = 0) const -> T const * { return static_cast<T const *>(std::next(begin(), byte_offset)); }
 
         auto empty() const -> bool { return length_ == 0; }
         auto data() -> void * { return buffer_; }
         auto data() const -> void const * { return buffer_; }
         auto size() const -> size_t { return length_; }
-        auto begin() -> std::byte * { return reinterpret_cast<std::byte *>(buffer_); }
+        auto begin() -> std::byte * { return static_cast<std::byte *>(buffer_); }
         auto end() -> std::byte * { return std::next(begin(), length_); }
-        auto begin() const -> std::byte const * { return reinterpret_cast<std::byte const *>(buffer_); }
+        auto begin() const -> std::byte const * { return static_cast<std::byte const *>(buffer_); }
         auto end() const -> std::byte const * { return std::next(begin(), length_); }
     };
 }
