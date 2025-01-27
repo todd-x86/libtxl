@@ -13,16 +13,17 @@
 namespace txl
 {
     /**
-     * 0x00: [Head:8][Offset:8
-     * 0x10: ...[EntrySize:4][Data...]...
+     * 0x00: [Head:8][Tail:8]
+     * 0x10: [Cycle:8][EntrySize:4][Data...]...
      */
-    class ring_buffer_file
+    class ring_buffer_file final
     {
     private:
         struct header_data
         {
             uint64_t head_;
             uint64_t tail_;
+            uint64_t cycle_;
         };
 
         struct entry_data
