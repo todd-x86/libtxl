@@ -49,7 +49,7 @@ namespace txl
 
         auto entry_at(size_t offset) const -> entry_data *
         {
-            return entry_map().slice(sizeof(header_data) + offset).to_alias<entry_data>();
+            return entry_map().slice(offset).to_alias<entry_data>();
         }
     public:
         enum open_mode
@@ -145,7 +145,7 @@ namespace txl
             }
 
             auto offset = offset_;
-            if (offset + sizeof(header_data) + src.size() > max_size_)
+            if (offset + sizeof(header_data) + sizeof(entry_data) + src.size() > max_size_)
             {
                 // Signify the end
                 entry_at(offset)->size_ = 0;

@@ -30,4 +30,20 @@ TXL_UNIT_TEST(rb_file_write)
     assert_equal(0, f2.read().or_throw().size());
 }
 
+TXL_UNIT_TEST(rb_file_write_circle)
+{
+    auto f = txl::ring_buffer_file{"test.bin", txl::ring_buffer_file::read_write, 4096};
+    for (auto i = 0; i < 1000; ++i)
+    {
+        f.write("HELLO"sv).or_throw();
+    }
+
+    auto f2 = txl::ring_buffer_file{"test.bin", txl::ring_buffer_file::read_only, 4096};
+    for (auto i = 0; i < 50; ++i)
+    {
+        auto s = f2.read().or_throw();
+        assert_equal(s.to_string_view(), "HELLO"sv);
+    }
+}
+
 TXL_RUN_TESTS()
