@@ -142,12 +142,18 @@ namespace txl
             return slice(begin, length_);
         }
 
+        auto copy_from(buffer_ref b) -> size_t
+        {
+            auto bytes_to_copy = std::min(b.size(), size());
+            auto src_data = b.begin();
+            std::copy(src_data, std::next(src_data, bytes_to_copy), begin()); 
+            return bytes_to_copy;
+        }
+
         auto operator=(std::string_view s) -> buffer_ref
         {
             // TODO: is this bad design?
-            auto bytes_to_copy = std::min(s.size(), size());
-            auto src_data = reinterpret_cast<std::byte const *>(s.data());
-            std::copy(src_data, std::next(src_data, bytes_to_copy), begin()); 
+            copy_from(s);
             return *this;
         }
         
@@ -164,10 +170,10 @@ namespace txl
         auto to_string_view() const -> std::string_view { return {static_cast<char const *>(data()), size()}; }
         
         template<class T>
-        auto to_alias(size_t byte_offset = 0) -> T * { return static_cast<T *>(std::next(begin(), byte_offset)); }
+        auto to_alias(size_t byte_offset = 0) -> T * { return reinterpret_cast<T *>(std::next(begin(), byte_offset)); }
         
         template<class T>
-        auto to_alias(size_t byte_offset = 0) const -> T const * { return static_cast<T const *>(std::next(begin(), byte_offset)); }
+        auto to_alias(size_t byte_offset = 0) const -> T const * { return reinterpret_cast<T const *>(std::next(begin(), byte_offset)); }
 
         auto empty() const -> bool { return length_ == 0; }
         auto data() -> void * { return buffer_; }

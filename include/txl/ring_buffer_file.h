@@ -1,6 +1,7 @@
 #pragma once
 
 #include <txl/buffer_ref.h>
+#include <txl/memory_map.h>
 #include <txl/result.h>
 #include <txl/file.h>
 #include <txl/types.h>
@@ -8,20 +9,47 @@
 
 #include <string_view>
 #include <cstddef>
-#include <atomic>
 
 namespace txl
 {
     /**
-     * 0x00: [Offset:8][Size:8]
+     * 0x00: [Head:8][Offset:8
      * 0x10: ...[EntrySize:4][Data...]...
      */
     class ring_buffer_file
     {
     private:
+        struct header_data
+        {
+            uint64_t head_;
+            uint64_t tail_;
+        };
+
+        struct entry_data
+        {
+            uint32_t size_;
+            std::byte data_[0];
+        };
+
         file storage_;
-        std::atomic<off_t> next_off_;
+        memory_map map_;
         size_t max_size_;
+        size_t offset_ = 0;
+
+        auto header_map() const -> header_data *
+        {
+            return map_.memory().to_alias<header_data>();
+        }
+
+        auto entry_map() const -> buffer_ref
+        {
+            return map_.memory().slice(sizeof(header_data));
+        }
+
+        auto entry_at(size_t offset) const -> entry_data *
+        {
+            return entry_map().slice(sizeof(header_data) + offset).to_alias<entry_data>();
+        }
     public:
         enum open_mode
         {
@@ -32,7 +60,6 @@ namespace txl
         ring_buffer_file(size_t max_size)
             : max_size_(max_size)
         {
-            next_off_.store(0, std::memory_order_release);
         }
 
         ring_buffer_file(std::string_view filename, open_mode mode, size_t max_size)
@@ -41,97 +68,101 @@ namespace txl
             open(filename, mode).or_throw();
         }
 
+        auto offset() const -> size_t { return offset_; }
+
         auto open(std::string_view filename, open_mode mode) -> result<void>
         {
             auto str_mode = "w+";
+            auto mm_mode = memory_map::read | memory_map::write;
             switch (mode)
             {
                 case read_only:
                     str_mode = "r";
+                    mm_mode = memory_map::read;
                     break;
                 case read_write:
                     str_mode = "w+";
+                    mm_mode = memory_map::read | memory_map::write;
                     break;
             }
-            return storage_.open(filename, str_mode);
+            auto res = storage_.open(filename, str_mode);
+            if (mode != read_only)
+            {
+                res.then([this]() {
+                    return storage_.truncate(max_size_);
+                });
+            }
+            return res.then([this, mm_mode]() {
+                return map_.open(max_size_, mm_mode, true, memory_map::no_swap, nullptr, storage_.fd());
+            }).then([this]() {
+                offset_ = header_map()->head_;
+                return result<void>{};
+            });
         }
         
         auto fd() const -> int { return storage_.fd(); }
 
-        auto is_open() const -> bool { return storage_.is_open(); }
+        auto is_open() const -> bool { return storage_.is_open() or map_.is_open(); }
 
-        auto close() -> result<void> { return storage_.close(); }
-
-        auto read_into(byte_vector & dst) -> result<buffer_ref>
+        auto close() -> result<void>
         {
-            auto before_size = dst.size();
+            return map_.close()
+                .then([this]() {
+                    return storage_.close();
+                });
+        }
+
+        auto read() -> result<buffer_ref>
+        {
+            auto * e = entry_at(offset_);
             
-            uint64_t segment_size = 0;
-            auto segment_size_br = buffer_ref::cast(segment_size);
-
-            auto read_at = next_off_.load(std::memory_order_acquire);
-            if (auto res = storage_.read(read_at, segment_size_br); res.is_error())
-            {
-                return res;
-            }
-
             // Do not advance
-            if (segment_size == 0)
+            if (e->size_ == 0)
             {
                 return {buffer_ref{}};
             }
-            next_off_.store(read_at + sizeof(segment_size) + segment_size, std::memory_order_release);
 
-            dst.resize(before_size + segment_size);
-            read_at += sizeof(segment_size);
+            if (offset_ + sizeof(entry_data) + e->size_ > max_size_)
+            {
+                offset_ = 0;
+            }
+            else
+            {
+                offset_ += sizeof(entry_data) + e->size_;
+            }
 
-            return storage_.read(read_at, buffer_ref{&dst[before_size], dst.size() - before_size});
+            return {buffer_ref{e->data_, e->size_}};
         }
 
         auto write(buffer_ref src) -> result<buffer_ref>
         {
-            const uint64_t ZERO = 0;
-
-            uint64_t segment_size = src.size();
-            auto bytes_to_advance = segment_size + sizeof(segment_size);
-
-            if (bytes_to_advance > max_size_)
+            const entry_data SENTINEL = { .size_ = 0 };
+            if (src.size() + sizeof(header_data) + sizeof(entry_data) > max_size_)
             {
-                // Can't write bigger than the file allows
-                return {get_system_error(EBADF)};
+                // Can't write bigger than the memory mapped file allows
+                return {get_system_error(EINVAL)};
             }
 
-            auto write_at = next_off_.load(std::memory_order_acquire);
-            if (write_at + bytes_to_advance <= max_size_)
+            auto offset = offset_;
+            if (offset + sizeof(header_data) + src.size() > max_size_)
             {
-                // Increment
-                next_off_.store(write_at + bytes_to_advance, std::memory_order_release);
-            }
-            else
-            {
-                // Start at next offset
-                write_at = 0;
-                next_off_.store(bytes_to_advance, std::memory_order_release);
-            }
+                // Signify the end
+                entry_at(offset)->size_ = 0;
 
-            auto write_segment_size_at = write_at;
-
-            write_at += sizeof(segment_size);
-
-            if (auto res = storage_.write(write_at, src); res.is_error() or static_cast<size_t>(write_at) == max_size_)
-            {
-                return res;
+                // Loop back to beginning
+                offset = 0;
             }
-            write_at += src.size();
+            auto * e = entry_at(offset);
+            e->size_ = src.size();
+            auto dst = buffer_ref{e->data_, e->size_};
+            auto bytes_copied = dst.copy_from(src);
 
-            // Append zero to signify last entry
-            if (auto res = storage_.write(write_at, buffer_ref::cast(ZERO)); res.is_error())
-            {
-                return res;
-            }
-            
-            // Go back and write the segment size so it's readable
-            return storage_.write(write_segment_size_at, buffer_ref::cast(segment_size));
+            // Stamp a zero to signify the end
+            *entry_at(offset + sizeof(entry_data) + e->size_) = SENTINEL;
+            offset += sizeof(entry_data) + e->size_;
+            offset_ = header_map()->tail_ = offset;
+
+            return src.slice(0, bytes_copied);
         }
     };
 }

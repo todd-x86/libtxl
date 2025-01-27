@@ -1,6 +1,5 @@
 #include <txl/unit_test.h>
 #include <txl/ring_buffer_file.h>
-#include <txl/types.h>
 
 #include <string_view>
 
@@ -8,24 +7,27 @@ using namespace std::literals;
 
 TXL_UNIT_TEST(rb_file_write)
 {
-    auto f = txl::ring_buffer_file{"test.bin", txl::ring_buffer_file::read_write, (8 + 5) * 3};
+    auto f = txl::ring_buffer_file{"test.bin", txl::ring_buffer_file::read_write, 4096};
     f.write("HELLO"sv).or_throw();
     f.write("HELLO"sv).or_throw();
     f.write("HELLO"sv).or_throw();
     f.write("DI-DA-DA-DA"sv).or_throw();
 
-    auto f2 = txl::ring_buffer_file{"test.bin", txl::ring_buffer_file::read_only, (8 + 5) * 3};
-    auto data = txl::byte_vector{};
-    assert_equal("DI-DA-DA-DA"sv.size(), f2.read_into(data).or_throw().size());
-    assert_equal(0, f2.read_into(data).or_throw().size());
-    assert_equal(0, f2.read_into(data).or_throw().size());
-    assert_equal(0, f2.read_into(data).or_throw().size());
+    auto f2 = txl::ring_buffer_file{"test.bin", txl::ring_buffer_file::read_only, 4096};
+    assert_equal(5, f2.read().or_throw().size());
+    assert_equal(5, f2.read().or_throw().size());
+    assert_equal(5, f2.read().or_throw().size());
+    auto data = f2.read().or_throw();
+    assert_equal("DI-DA-DA-DA"sv.size(), data.size());
+    assert_equal(0, f2.read().or_throw().size());
+    assert_equal(0, f2.read().or_throw().size());
+    assert_equal(0, f2.read().or_throw().size());
 
+    assert_equal(9+9+9+15, f.offset());
     f.write("I CAN FIX IT!"sv).or_throw();
-    data.clear();
-    assert_equal("I CAN FIX IT!"sv.size(), f2.read_into(data).or_throw().size());
-    assert_equal(0, f2.read_into(data).or_throw().size());
-    assert_equal(0, f2.read_into(data).or_throw().size());
+    assert_equal("I CAN FIX IT!"sv.size(), f2.read().or_throw().size());
+    assert_equal(0, f2.read().or_throw().size());
+    assert_equal(0, f2.read().or_throw().size());
 }
 
 TXL_RUN_TESTS()

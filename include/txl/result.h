@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <functional>
 #include <optional>
 #include <stdexcept>
 #include <system_error>
@@ -33,6 +34,22 @@ namespace txl
         };
         uint8_t flags_ = 0;
 
+        auto move_from(result && v) -> void
+        {
+            std::swap(flags_, v.flags_);
+
+            if (flags_ & ASSIGNED)
+            {
+                if (flags_ & IS_ERROR)
+                {
+                    error_ = std::move(v.error_);
+                }
+                else
+                {
+                    value_ = std::move(v.value_);
+                }
+            }
+        }
     public:
         result() = default;
         result(Value && value)
@@ -49,20 +66,9 @@ namespace txl
 
         result(result && v)
         {
-            std::swap(flags_, v.flags_);
-
-            if (flags_ & ASSIGNED)
-            {
-                if (flags_ & IS_ERROR)
-                {
-                    error_ = std::move(v.error_);
-                }
-                else
-                {
-                    value_ = std::move(v.value_);
-                }
-            }
+            move_from(std::move(v));
         }
+        
         result(result const & v)
             : result()
         {
@@ -95,6 +101,16 @@ namespace txl
             {
                 value_.~Value();
             }
+        }
+        
+        auto operator=(result const &) -> result & = default;
+        auto operator=(result && v) -> result &
+        {
+            if (&v != this)
+            {
+                move_from(std::move(v));
+            }
+            return *this;
         }
 
         auto operator->() -> Value * { return &value_; }
@@ -138,35 +154,52 @@ namespace txl
         }
         
         auto release() -> Value && { return std::move(value_); }
+
+        auto then(std::function<result<Value>()> cont) -> result<Value> &
+        {
+            // Only runs if result is NOT an error
+            if (not is_error())
+            {
+                *this = std::move(cont());
+            }
+            return *this;
+        }
     };
     
     template<>
     class result<void> final
     {
     private:
-        std::error_code error_;
-        bool has_error_ = false;
+        std::error_code error_{};
     public:
         result() = default;
 
         result(std::error_code const & err)
             : error_(err)
-            , has_error_(true)
         {
         }
 
         result(result && v)
             : error_(std::move(v.error_))
         {
-            std::swap(has_error_, v.has_error_);
         }
         result(result const &) = default;
 
+        auto operator=(result const &) -> result & = default;
+        auto operator=(result && v) -> result &
+        {
+            if (&v != this)
+            {
+                error_ = std::move(v.error_);
+            }
+            return *this;
+        }
+
         operator bool() const { return not is_error(); } 
 
-        auto is_assigned() const -> bool { return has_error_; }
+        auto is_assigned() const -> bool { return static_cast<bool>(error_); }
         auto empty() const -> bool { return not is_assigned(); }
-        auto is_error() const -> bool { return has_error_; }
+        auto is_error() const -> bool { return static_cast<bool>(error_); }
         auto error() const -> std::error_code const & { return error_; }
 
         auto or_throw() -> void
@@ -175,6 +208,16 @@ namespace txl
             {
                 throw std::system_error{error()};
             }
+        }
+
+        auto then(std::function<result()> cont) -> result &
+        {
+            // Only runs if result is NOT an error
+            if (not is_error())
+            {
+                *this = std::move(cont());
+            }
+            return *this;
         }
     };
 }

@@ -160,5 +160,11 @@ namespace txl
 
             return static_cast<size_t>(*end_pos);
         }
+
+        auto truncate(size_t size) -> result<void>
+        {
+            auto res = ::ftruncate(fd_, size);
+            return handle_system_error(res);
+        }
     };
 }
