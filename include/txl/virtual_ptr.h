@@ -1,74 +1,131 @@
 #pragma once
 
+#include <algorithm>
+
+// unique_ptr with virtual destructor for deferring destruction (owned vs non-owned pointers)
+
 namespace txl
 {
+    namespace detail
+    {
+        template<class T>
+        struct virtual_holder
+        {
+            T * pointer_;
+
+            virtual_holder(T * ptr)
+                : pointer_(ptr)
+            {
+            }
+
+            virtual ~virtual_holder() = default;
+
+            virtual auto free() -> void
+            {
+                delete this;
+            }
+        };
+
+        template<class T>
+        struct heap_holder : virtual_holder<T>
+        {
+            using virtual_holder<T>::virtual_holder;
+
+            auto free() -> void override
+            {
+                auto p = this->pointer_;
+                this->pointer_ = nullptr;
+                delete p;
+                
+                delete this;
+            }
+        };
+    }
+
     template<class T>
     class virtual_ptr
     {
     protected:
-        T * pointer_ = nullptr;
+        detail::virtual_holder<T> * data_ = nullptr;
     public:
         virtual_ptr() = default;
         
         virtual_ptr(T * value)
-            : pointer_(value)
         {
+            data_ = new detail::virtual_holder<T>{value};
         }
 
-        virtual ~virtual_ptr() = default;
+        virtual_ptr(virtual_ptr const &) = default;
+        virtual_ptr(virtual_ptr && p)
+            : virtual_ptr()
+        {
+            if (data_)
+            {
+                data_->free();
+            }
+            std::swap(data_, p.data_);
+        }
+
+        ~virtual_ptr()
+        {
+            reset();
+        }
+
+        auto reset() -> void
+        {
+            auto data = data_;
+            data_ = nullptr;
+            if (data)
+            {
+                data->free();
+            }
+        }
+        
+        auto operator=(virtual_ptr const &) -> virtual_ptr & = default;
+        auto operator=(virtual_ptr && p) -> virtual_ptr &
+        {
+            if (&p != this)
+            {
+            }
+            return *this;
+        }
 
         auto operator*() -> T &
         {
-            return *pointer_;
+            return *(data_->pointer_);
         }
 
         auto operator*() const -> T const &
         {
-            return *pointer_;
+            return *(data_->pointer_);
         }
 
         auto operator->() -> T *
         {
-            return pointer_;
+            return data_ ? data_->pointer_ : nullptr;
         }
 
         auto operator->() const -> T const *
         {
-            return pointer_;
+            return data_ ? data_->pointer_ : nullptr;
         }
     };
 
+    // heap_ptr is a virtual_ptr that owns the memory and destruction
     template<class T>
     struct heap_ptr : virtual_ptr<T>
     {
         heap_ptr() = default;
         heap_ptr(T * value)
-            : virtual_ptr<T>(value)
-        {
-        }
-        heap_ptr(heap_ptr const &) = delete;
-        heap_ptr(heap_ptr && p)
             : virtual_ptr<T>()
         {
-            std::swap(p.pointer_, this->pointer_);
+            this->data_ = new detail::heap_holder<T>{value};
         }
-
-        ~heap_ptr()
-        {
-            auto p = this->pointer_;
-            this->pointer_ = nullptr;
-            delete p;
-        }
+        heap_ptr(heap_ptr const &) = delete;
+        heap_ptr(heap_ptr &&) = default;
 
         auto operator=(heap_ptr const &) -> heap_ptr & = delete;
-        auto operator=(heap_ptr && p) -> heap_ptr &
-        {
-            if (&p != this)
-            {
-                std::swap(p.pointer_, this->pointer_);
-            }
-            return *this;
-        }
+        auto operator=(heap_ptr && p) -> heap_ptr & = default;
     };
 
     template<class T, class... Args>
