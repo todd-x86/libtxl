@@ -202,6 +202,7 @@ namespace txl
             catch (...)
             {
                 exit_code = 1;
+                test->_set_error("unknown exception type thrown");
                 test->_end_test(false);
             }
         }

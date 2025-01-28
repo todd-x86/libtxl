@@ -43,7 +43,7 @@ TXL_UNIT_TEST(virtual_ptr)
     assert_equal(resources_deleted_, 1);
 }
 
-TXL_UNIT_TEST(virtual_ptr_copy)
+TXL_UNIT_TEST(virtual_ptr_hiding)
 {
     resources_created_ = 0;
     resources_deleted_ = 0;
@@ -67,5 +67,48 @@ TXL_UNIT_TEST(virtual_ptr_copy)
     assert_equal(resources_created_, 1);
     assert_equal(resources_deleted_, 1);
 }
+
+TXL_UNIT_TEST(virtual_ptr_move)
+{
+    resources_created_ = 0;
+    resources_deleted_ = 0;
+    
+    txl::virtual_ptr<resource> res{};
+    assert_equal(resources_created_, 0);
+    assert_equal(resources_deleted_, 0);
+    {
+        auto src = txl::make_heap_ptr<resource>(200);
+        assert_equal(resources_created_, 1);
+        assert_equal(resources_deleted_, 0);
+        res = std::move(src);
+        assert_equal(resources_created_, 1);
+        assert_equal(resources_deleted_, 0);
+    }
+    assert_equal(resources_created_, 1);
+    assert_equal(resources_deleted_, 0);
+}
+
+TXL_UNIT_TEST(virtual_ptr_copy)
+{
+    resources_created_ = 0;
+    resources_deleted_ = 0;
+    
+    txl::virtual_ptr<resource> res{};
+    assert_equal(resources_created_, 0);
+    assert_equal(resources_deleted_, 0);
+    {
+        auto src = txl::make_heap_ptr<resource>(200);
+        assert_equal(resources_created_, 1);
+        assert_equal(resources_deleted_, 0);
+        assert_throws<std::runtime_error>([&res, &src]() {
+            res = src;
+        });
+        assert_equal(resources_created_, 1);
+        assert_equal(resources_deleted_, 0);
+    }
+    assert_equal(resources_created_, 1);
+    assert_equal(resources_deleted_, 1);
+}
+
 
 TXL_RUN_TESTS()

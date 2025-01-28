@@ -1,6 +1,7 @@
 #pragma once
 
 #include <algorithm>
+#include <stdexcept>
 
 // unique_ptr with virtual destructor for deferring destruction (owned vs non-owned pointers)
 
@@ -20,6 +21,11 @@ namespace txl
 
             virtual ~virtual_holder() = default;
 
+            virtual auto copy() -> virtual_holder<T> *
+            {
+                return new virtual_holder<T>{pointer_};
+            }
+
             virtual auto free() -> void
             {
                 delete this;
@@ -30,6 +36,11 @@ namespace txl
         struct heap_holder : virtual_holder<T>
         {
             using virtual_holder<T>::virtual_holder;
+            
+            auto copy() -> heap_holder<T> * override
+            {
+                throw std::runtime_error{"cannot copy a heap-backed virtual_ptr"};
+            }
 
             auto free() -> void override
             {
@@ -55,7 +66,20 @@ namespace txl
             data_ = new detail::virtual_holder<T>{value};
         }
 
-        virtual_ptr(virtual_ptr const &) = default;
+        virtual_ptr(virtual_ptr const & p)
+            : virtual_ptr()
+        {
+            if (p.data_)
+            {
+                auto new_data = p.data_->copy();
+                reset();
+                data_ = new_data;
+            }
+            else
+            {
+                reset();
+            }
+        }
         virtual_ptr(virtual_ptr && p)
             : virtual_ptr()
         {
@@ -81,11 +105,33 @@ namespace txl
             }
         }
         
-        auto operator=(virtual_ptr const &) -> virtual_ptr & = default;
+        auto operator=(virtual_ptr const & p) -> virtual_ptr &
+        {
+            if (&p != this)
+            {
+                if (p.data_)
+                {
+                    auto new_data = p.data_->copy();
+                    reset();
+                    data_ = new_data;
+                }
+                else
+                {
+                    reset();
+                }
+            }
+            return *this;
+        }
+
         auto operator=(virtual_ptr && p) -> virtual_ptr &
         {
             if (&p != this)
             {
+                if (data_)
+                {
+                    data_->free();
+                }
+                std::swap(data_, p.data_);
             }
             return *this;
         }
