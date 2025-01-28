@@ -21,9 +21,9 @@ namespace txl
     private:
         struct header_data
         {
-            uint64_t head_;
-            uint64_t tail_;
-            uint64_t cycle_;
+            uint64_t head_; // byte offset
+            uint64_t tail_; // byte offset
+            uint64_t cycle_; // number of cycles around the file (for iterator synchronizing)
         };
 
         struct entry_data
@@ -36,6 +36,7 @@ namespace txl
         memory_map map_;
         size_t max_size_;
         size_t offset_ = 0;
+        uint64_t cycle_ = 0;
 
         auto header_map() const -> header_data *
         {
@@ -50,6 +51,27 @@ namespace txl
         auto entry_at(size_t offset) const -> entry_data *
         {
             return entry_map().slice(offset).to_alias<entry_data>();
+        }
+
+        auto should_advance_head(size_t size) const -> bool
+        {
+            //auto bytes_available = entry_map().size();
+            //auto bytes_needed = size + sizeof(entry_data);
+
+            // If size exceeds the head
+            if (header_map()->tail_ >= header_map()->head_)
+            {
+                
+            }
+            else if (header_map()->head_ < header_map()->tail_)
+            {
+            }
+
+            return false;
+        }
+
+        auto advance_head() -> void
+        {
         }
     public:
         enum open_mode
@@ -97,6 +119,7 @@ namespace txl
                 return map_.open(max_size_, mm_mode, true, memory_map::no_swap, nullptr, storage_.fd());
             }).then([this]() {
                 offset_ = header_map()->head_;
+                cycle_ = header_map()->cycle_;
                 return result<void>{};
             });
         }
@@ -125,6 +148,7 @@ namespace txl
 
             if (offset_ + sizeof(entry_data) + e->size_ > max_size_)
             {
+                ++cycle_;
                 offset_ = 0;
             }
             else
@@ -152,7 +176,14 @@ namespace txl
 
                 // Loop back to beginning
                 offset = 0;
+                ++cycle_;
+                header_map()->cycle_ = cycle_;
             }
+            if (should_advance_head(src.size()))
+            {
+                advance_head();
+            }
+
             auto * e = entry_at(offset);
             e->size_ = src.size();
             auto dst = buffer_ref{e->data_, e->size_};
