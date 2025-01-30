@@ -32,17 +32,24 @@ TXL_UNIT_TEST(rb_file_write)
 
 TXL_UNIT_TEST(rb_file_write_circle)
 {
+    std::array<std::string_view, 5> rando{ "**"sv, "+++"sv, "-"sv, ",,,,"sv, "?"sv };
+    std::ostringstream ss;
     auto f = txl::ring_buffer_file{"test.bin", txl::ring_buffer_file::read_write, 4096};
     for (auto i = 0; i < 1000; ++i)
     {
-        f.write("HELLO"sv).or_throw();
+        ss.str("");
+        ss << "HELLO" << i << rando[i % rando.size()];
+        f.write(ss.str()).or_throw();
     }
 
     auto f2 = txl::ring_buffer_file{"test.bin", txl::ring_buffer_file::read_only, 4096};
     for (auto i = 0; i < 50; ++i)
     {
+        auto j = i + 911;
+        ss.str("");
+        ss << "HELLO" << j << rando[j % rando.size()];
         auto s = f2.read().or_throw();
-        assert_equal(s.to_string_view(), "HELLO"sv);
+        assert_equal(s.to_string_view(), ss.str());
     }
 }
 

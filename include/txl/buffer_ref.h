@@ -3,6 +3,7 @@
 #include <txl/types.h>
 
 #include <algorithm>
+#include <string>
 #include <string_view>
 #include <iterator>
 #include <array>
@@ -20,6 +21,12 @@ namespace txl
 
         template<class Char>
         buffer_ref(std::basic_string_view<Char> s)
+            : buffer_ref(static_cast<void *>(const_cast<char *>(s.data())), s.size())
+        {
+        }
+        
+        template<class Char>
+        buffer_ref(std::basic_string<Char> const & s)
             : buffer_ref(static_cast<void *>(const_cast<char *>(s.data())), s.size())
         {
         }

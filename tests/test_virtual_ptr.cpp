@@ -100,6 +100,8 @@ TXL_UNIT_TEST(virtual_ptr_copy)
         auto src = txl::make_heap_ptr<resource>(200);
         assert_equal(resources_created_, 1);
         assert_equal(resources_deleted_, 0);
+
+        // Throws when trying to copy from a heap_ptr
         assert_throws<std::runtime_error>([&res, &src]() {
             res = src;
         });

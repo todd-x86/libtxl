@@ -42,7 +42,7 @@ namespace txl
         {
             return map_.memory().to_alias<header_data>();
         }
-
+        
         auto entry_map() const -> buffer_ref
         {
             return map_.memory().slice(sizeof(header_data));
@@ -55,23 +55,39 @@ namespace txl
 
         auto should_advance_head(size_t size) const -> bool
         {
-            //auto bytes_available = entry_map().size();
-            //auto bytes_needed = size + sizeof(entry_data);
+            size_t span;
+            auto head = header_map()->head_;
+            auto tail = header_map()->tail_;
 
-            // If size exceeds the head
-            if (header_map()->tail_ >= header_map()->head_)
+            auto bytes_available = entry_map().size();
+            auto bytes_needed = size + sizeof(entry_data);
+            if (tail >= head)
             {
-                
+                span = std::max(bytes_available - tail, head);
             }
-            else if (header_map()->head_ < header_map()->tail_)
+            else
             {
+                span = (head - tail);
             }
 
-            return false;
+            return span < bytes_needed;
         }
 
         auto advance_head() -> void
         {
+            auto * e = entry_at(header_map()->head_);
+            if (e->size_ == 0)
+            {
+                return;
+            }
+
+            auto next_head = header_map()->head_ + e->size_ + sizeof(entry_data);
+            if (next_head + sizeof(entry_data) >= entry_map().size())
+            {
+                next_head = 0;
+            }
+
+            header_map()->head_ = next_head;
         }
     public:
         enum open_mode
@@ -92,6 +108,8 @@ namespace txl
         }
 
         auto offset() const -> size_t { return offset_; }
+        auto file_head() const -> uint64_t { return header_map()->head_; }
+        auto file_tail() const -> uint64_t { return header_map()->tail_; }
 
         auto open(std::string_view filename, open_mode mode) -> result<void>
         {
@@ -138,6 +156,12 @@ namespace txl
 
         auto read() -> result<buffer_ref>
         {
+            if (cycle_ != header_map()->cycle_)
+            {
+                offset_ = header_map()->head_;
+                cycle_ = header_map()->cycle_;
+            }
+
             auto * e = entry_at(offset_);
             
             // Do not advance
@@ -161,11 +185,16 @@ namespace txl
 
         auto write(buffer_ref src) -> result<buffer_ref>
         {
-            const entry_data SENTINEL = { .size_ = 0 };
+            //const entry_data SENTINEL = { .size_ = 0 };
             if (src.size() + sizeof(header_data) + sizeof(entry_data) > max_size_)
             {
                 // Can't write bigger than the memory mapped file allows
                 return {get_system_error(EINVAL)};
+            }
+            
+            while (should_advance_head(src.size()))
+            {
+                advance_head();
             }
 
             auto offset = offset_;
@@ -179,10 +208,6 @@ namespace txl
                 ++cycle_;
                 header_map()->cycle_ = cycle_;
             }
-            if (should_advance_head(src.size()))
-            {
-                advance_head();
-            }
 
             auto * e = entry_at(offset);
             e->size_ = src.size();
@@ -190,7 +215,7 @@ namespace txl
             auto bytes_copied = dst.copy_from(src);
 
             // Stamp a zero to signify the end
-            *entry_at(offset + sizeof(entry_data) + e->size_) = SENTINEL;
+            //*entry_at(offset + sizeof(entry_data) + e->size_) = SENTINEL;
             offset += sizeof(entry_data) + e->size_;
             offset_ = header_map()->tail_ = offset;
 
