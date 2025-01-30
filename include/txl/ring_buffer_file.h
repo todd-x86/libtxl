@@ -185,7 +185,6 @@ namespace txl
 
         auto write(buffer_ref src) -> result<buffer_ref>
         {
-            //const entry_data SENTINEL = { .size_ = 0 };
             if (src.size() + sizeof(header_data) + sizeof(entry_data) > max_size_)
             {
                 // Can't write bigger than the memory mapped file allows
@@ -214,8 +213,6 @@ namespace txl
             auto dst = buffer_ref{e->data_, e->size_};
             auto bytes_copied = dst.copy_from(src);
 
-            // Stamp a zero to signify the end
-            //*entry_at(offset + sizeof(entry_data) + e->size_) = SENTINEL;
             offset += sizeof(entry_data) + e->size_;
             offset_ = header_map()->tail_ = offset;
 

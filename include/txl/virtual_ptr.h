@@ -83,10 +83,6 @@ namespace txl
         virtual_ptr(virtual_ptr && p)
             : virtual_ptr()
         {
-            if (data_)
-            {
-                data_->free();
-            }
             std::swap(data_, p.data_);
         }
 
@@ -130,6 +126,7 @@ namespace txl
                 if (data_)
                 {
                     data_->free();
+                    data_ = nullptr;
                 }
                 std::swap(data_, p.data_);
             }
