@@ -2,6 +2,11 @@ add_custom_target(test_io_reactor_data
     COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_CURRENT_LIST_DIR}/io_reactor_data ${CMAKE_CURRENT_BINARY_DIR}/io_reactor_data
 )
 
+add_executable(test_rb_reader test_rb_reader.cpp)
+add_test(NAME test_rb_reader COMMAND test_rb_reader)
+add_executable(test_rb_writer test_rb_writer.cpp)
+add_test(NAME test_rb_writer COMMAND test_rb_writer)
+
 add_executable(test_action test_action.cpp)
 add_test(NAME test_action COMMAND test_action)
 add_executable(test_backoff test_backoff.cpp)

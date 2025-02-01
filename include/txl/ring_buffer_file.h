@@ -7,6 +7,7 @@
 #include <txl/types.h>
 #include <txl/system_error.h>
 
+#include <atomic>
 #include <string_view>
 #include <cstddef>
 
@@ -19,6 +20,8 @@ namespace txl
     class ring_buffer_file final
     {
     private:
+        static const constexpr uint32_t EOF_SENTINEL = 0xFFFFFFFF;
+
         struct header_data
         {
             uint64_t head_; // byte offset
@@ -156,7 +159,8 @@ namespace txl
 
         auto read() -> result<buffer_ref>
         {
-            if (cycle_ != header_map()->cycle_)
+            // If we're on a new cycle OR we fell behind
+            if (cycle_ != header_map()->cycle_ or offset_ < header_map()->head_)
             {
                 offset_ = header_map()->head_;
                 cycle_ = header_map()->cycle_;
@@ -168,6 +172,14 @@ namespace txl
             if (e->size_ == 0)
             {
                 return {buffer_ref{}};
+            }
+
+            // Loop back
+            if (e->size_ == EOF_SENTINEL)
+            {
+                offset_ = 0;
+                ++cycle_;
+                e = entry_at(offset_);
             }
 
             if (offset_ + sizeof(entry_data) + e->size_ > max_size_)
@@ -200,21 +212,28 @@ namespace txl
             if (offset + sizeof(header_data) + sizeof(entry_data) + src.size() > max_size_)
             {
                 // Signify the end
-                entry_at(offset)->size_ = 0;
-
+                if (offset + sizeof(header_data) + sizeof(entry_data) < max_size_)
+                {
+                    __atomic_exchange_n(&entry_at(offset)->size_, EOF_SENTINEL, static_cast<int>(std::memory_order_seq_cst));
+                }
                 // Loop back to beginning
                 offset = 0;
                 ++cycle_;
-                header_map()->cycle_ = cycle_;
+                __atomic_exchange_n(&header_map()->cycle_, cycle_, static_cast<int>(std::memory_order_seq_cst));
             }
 
             auto * e = entry_at(offset);
-            e->size_ = src.size();
+            __atomic_exchange_n(&e->size_, src.size(), static_cast<int>(std::memory_order_seq_cst));
             auto dst = buffer_ref{e->data_, e->size_};
             auto bytes_copied = dst.copy_from(src);
 
             offset += sizeof(entry_data) + e->size_;
-            offset_ = header_map()->tail_ = offset;
+            __atomic_exchange_n(&header_map()->tail_, offset, static_cast<int>(std::memory_order_seq_cst));
+            offset_ = offset;
+            if (offset + sizeof(header_data) + sizeof(entry_data) < max_size_)
+            {
+                __atomic_exchange_n(&entry_at(offset)->size_, EOF_SENTINEL, static_cast<int>(std::memory_order_seq_cst));
+            }
 
             return src.slice(0, bytes_copied);
         }
