@@ -45,7 +45,7 @@ TXL_UNIT_TEST(rb_file_write_circle)
     auto f2 = txl::ring_buffer_file{"test.bin", txl::ring_buffer_file::read_only, 4096};
     for (auto i = 0; i < 50; ++i)
     {
-        auto j = i + 911;
+        auto j = i + 865;
         ss.str("");
         ss << "HELLO" << j << rando[j % rando.size()];
         auto s = f2.read().or_throw();
@@ -78,7 +78,7 @@ TXL_UNIT_TEST(rb_file_write_circle_stale_reader)
 
     for (auto i = 0; i < 50; ++i)
     {
-        auto j = i + 911;
+        auto j = i + 865;
         ss.str("");
         ss << "HELLO" << j << rando[j % rando.size()];
         auto s = f2.read().or_throw();

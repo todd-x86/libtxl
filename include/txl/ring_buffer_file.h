@@ -185,6 +185,11 @@ namespace txl
             {
                 next_head();
             }
+            else if (file_cursor()->tail_ <= cur_.head_)
+            {
+                // End-of-file
+                return buffer_ref{};
+            }
             return buffer_ref{&e->data_, e->size_};
         }
 
