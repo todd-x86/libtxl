@@ -7,6 +7,7 @@
 #include <txl/types.h>
 #include <txl/system_error.h>
 
+#include <iostream>
 #include <atomic>
 #include <string_view>
 #include <cstddef>
@@ -20,13 +21,41 @@ namespace txl
     class ring_buffer_file final
     {
     private:
-        static const constexpr uint32_t EOF_SENTINEL = 0xFFFFFFFF;
+        struct cursor_data;
+        struct file_cursor_data;
 
-        struct header_data
+        friend auto operator<<(std::ostream & os, cursor_data const & c) -> std::ostream &;
+        friend auto operator<<(std::ostream & os, file_cursor_data const & c) -> std::ostream &;
+
+        struct cursor_data
         {
-            uint64_t head_; // byte offset
-            uint64_t tail_; // byte offset
-            uint64_t cycle_; // number of cycles around the file (for iterator synchronizing)
+            uint64_t offset_;
+            uint64_t cycle_;
+
+            auto operator<(cursor_data const & c) const -> bool
+            {
+                return cycle_ < c.cycle_ or (cycle_ == c.cycle_ and offset_ < c.offset_);
+            }
+            
+            auto operator<=(cursor_data const & c) const -> bool
+            {
+                return cycle_ < c.cycle_ or (cycle_ == c.cycle_ and offset_ <= c.offset_);
+            }
+
+            auto next(uint64_t offset, uint64_t max_size) -> cursor_data
+            {
+                auto c = *this;
+                c.offset_ += offset;
+                c.cycle_ += (c.offset_ / max_size);
+                c.offset_ = (c.offset_ % max_size);
+                return c;
+            }
+        };
+
+        struct file_cursor_data
+        {
+            cursor_data head_;
+            cursor_data tail_;
         };
 
         struct entry_data
@@ -38,17 +67,16 @@ namespace txl
         file storage_;
         memory_map map_;
         size_t max_size_;
-        size_t offset_ = 0;
-        uint64_t cycle_ = 0;
+        file_cursor_data cur_{{0, 0}, {0, 0}};
 
-        auto header_map() const -> header_data *
+        auto file_cursor() const -> file_cursor_data *
         {
-            return map_.memory().to_alias<header_data>();
+            return map_.memory().to_alias<file_cursor_data>();
         }
         
         auto entry_map() const -> buffer_ref
         {
-            return map_.memory().slice(sizeof(header_data));
+            return map_.memory().slice(sizeof(file_cursor_data));
         }
 
         auto entry_at(size_t offset) const -> entry_data *
@@ -56,41 +84,33 @@ namespace txl
             return entry_map().slice(offset).to_alias<entry_data>();
         }
 
-        auto should_advance_head(size_t size) const -> bool
+        auto head_entry() const -> entry_data *
         {
-            size_t span;
-            auto head = header_map()->head_;
-            auto tail = header_map()->tail_;
-
-            auto bytes_available = entry_map().size();
-            auto bytes_needed = size + sizeof(entry_data);
-            if (tail >= head)
-            {
-                span = std::max(bytes_available - tail, head);
-            }
-            else
-            {
-                span = (head - tail);
-            }
-
-            return span < bytes_needed;
+            return entry_at(cur_.head_.offset_);
         }
 
-        auto advance_head() -> void
+        auto tail_entry() const -> entry_data *
         {
-            auto * e = entry_at(header_map()->head_);
-            if (e->size_ == 0)
-            {
-                return;
-            }
+            return entry_at(cur_.tail_.offset_);
+        }
 
-            auto next_head = header_map()->head_ + e->size_ + sizeof(entry_data);
-            if (next_head + sizeof(entry_data) >= entry_map().size())
+        auto next_head() -> void
+        {
+            auto * e = head_entry();
+            auto total_bytes = sizeof(entry_data) + e->size_;
+            cur_.head_.offset_ += total_bytes;
+            if (cur_.head_.offset_ + sizeof(entry_data) > entry_map().size())
             {
-                next_head = 0;
+                // Loop around
+                ++cur_.head_.cycle_;
+                cur_.head_.offset_ = 0;
             }
+        }
 
-            header_map()->head_ = next_head;
+        auto next_tail() -> void
+        {
+            auto * e = tail_entry();
+            cur_.tail_.offset_ += sizeof(entry_data) + e->size_;
         }
     public:
         enum open_mode
@@ -109,10 +129,6 @@ namespace txl
         {
             open(filename, mode).or_throw();
         }
-
-        auto offset() const -> size_t { return offset_; }
-        auto file_head() const -> uint64_t { return header_map()->head_; }
-        auto file_tail() const -> uint64_t { return header_map()->tail_; }
 
         auto open(std::string_view filename, open_mode mode) -> result<void>
         {
@@ -139,8 +155,7 @@ namespace txl
             return res.then([this, mm_mode]() {
                 return map_.open(max_size_, mm_mode, true, memory_map::no_swap, nullptr, storage_.fd());
             }).then([this]() {
-                offset_ = header_map()->head_;
-                cycle_ = header_map()->cycle_;
+                cur_ = *file_cursor();
                 return result<void>{};
             });
         }
@@ -159,83 +174,60 @@ namespace txl
 
         auto read() -> result<buffer_ref>
         {
-            // If we're on a new cycle OR we fell behind
-            if (cycle_ != header_map()->cycle_ or offset_ < header_map()->head_)
+            auto * e = head_entry();
+            if (cur_.head_ < file_cursor()->head_)
             {
-                offset_ = header_map()->head_;
-                cycle_ = header_map()->cycle_;
+                cur_ = *file_cursor();
             }
-
-            auto * e = entry_at(offset_);
             
-            // Do not advance
-            if (e->size_ == 0)
+            // Advance if we have room
+            if (cur_.head_ < file_cursor()->tail_ and cur_.head_.next(e->size_, entry_map().size()) <= file_cursor()->tail_)
             {
-                return {buffer_ref{}};
+                next_head();
             }
-
-            // Loop back
-            if (e->size_ == EOF_SENTINEL)
-            {
-                offset_ = 0;
-                ++cycle_;
-                e = entry_at(offset_);
-            }
-
-            if (offset_ + sizeof(entry_data) + e->size_ > max_size_)
-            {
-                ++cycle_;
-                offset_ = 0;
-            }
-            else
-            {
-                offset_ += sizeof(entry_data) + e->size_;
-            }
-
-            return {buffer_ref{e->data_, e->size_}};
+            return buffer_ref{&e->data_, e->size_};
         }
 
         auto write(buffer_ref src) -> result<buffer_ref>
         {
-            if (src.size() + sizeof(header_data) + sizeof(entry_data) > max_size_)
+            auto bytes_needed = sizeof(entry_data) + src.size();
+            auto dst = entry_map().slice_n(cur_.tail_.offset_, bytes_needed);
+            if (dst.size() < bytes_needed)
             {
-                // Can't write bigger than the memory mapped file allows
-                return {get_system_error(EINVAL)};
+                // Loop around
+                cur_.tail_.offset_ = 0;
+                ++cur_.tail_.cycle_;
             }
+
+            while (cur_.head_.next(entry_map().size(), entry_map().size()) <= cur_.tail_)
+            {
+                next_head();
+            }
+
+            auto * e = tail_entry();
+            dst = buffer_ref{&e->data_, src.size()};
+            dst.copy_from(src);
+            e->size_ = src.size();
             
-            while (should_advance_head(src.size()))
+            next_tail();
+            if (cur_.tail_.offset_ + sizeof(entry_data) <= entry_map().size())
             {
-                advance_head();
+                tail_entry()->size_ = 0;
             }
-
-            auto offset = offset_;
-            if (offset + sizeof(header_data) + sizeof(entry_data) + src.size() > max_size_)
-            {
-                // Signify the end
-                if (offset + sizeof(header_data) + sizeof(entry_data) < max_size_)
-                {
-                    __atomic_exchange_n(&entry_at(offset)->size_, EOF_SENTINEL, static_cast<int>(std::memory_order_seq_cst));
-                }
-                // Loop back to beginning
-                offset = 0;
-                ++cycle_;
-                __atomic_exchange_n(&header_map()->cycle_, cycle_, static_cast<int>(std::memory_order_seq_cst));
-            }
-
-            auto * e = entry_at(offset);
-            __atomic_exchange_n(&e->size_, src.size(), static_cast<int>(std::memory_order_seq_cst));
-            auto dst = buffer_ref{e->data_, e->size_};
-            auto bytes_copied = dst.copy_from(src);
-
-            offset += sizeof(entry_data) + e->size_;
-            __atomic_exchange_n(&header_map()->tail_, offset, static_cast<int>(std::memory_order_seq_cst));
-            offset_ = offset;
-            if (offset + sizeof(header_data) + sizeof(entry_data) < max_size_)
-            {
-                __atomic_exchange_n(&entry_at(offset)->size_, EOF_SENTINEL, static_cast<int>(std::memory_order_seq_cst));
-            }
-
-            return src.slice(0, bytes_copied);
+            *file_cursor() = cur_;
+            
+            return dst;
         }
     };
+
+    inline auto operator<<(std::ostream & os, ring_buffer_file::cursor_data const & c) -> std::ostream &
+    {
+        os << "(O=" << c.offset_ << ", C=" << c.cycle_ << ")";
+        return os;
+    }
+    inline auto operator<<(std::ostream & os, ring_buffer_file::file_cursor_data const & c) -> std::ostream &
+    {
+        os << "H=" << c.head_ << " | T=" << c.tail_;
+        return os;
+    }
 }

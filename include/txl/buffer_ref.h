@@ -130,7 +130,12 @@ namespace txl
         }
         auto operator!=(buffer_ref const & other) const -> bool
         {
-            return !(*this == other);
+            return not (*this == other);
+        }
+
+        auto slice_n(size_t pos, size_t len) -> buffer_ref
+        {
+            return slice(pos, pos + len);
         }
 
         auto slice(size_t begin, size_t end) -> buffer_ref
