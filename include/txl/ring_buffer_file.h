@@ -20,7 +20,7 @@ namespace txl
      */
     class ring_buffer_file final
     {
-    private:
+    public:
         struct cursor_data;
         struct file_cursor_data;
 
@@ -31,6 +31,11 @@ namespace txl
         {
             uint64_t offset_;
             uint64_t cycle_;
+
+            auto distance_from(cursor_data const & c, size_t max_size) const -> off_t
+            {
+                return ((c.cycle_ - cycle_) * max_size) + (c.offset_ - offset_);
+            }
 
             auto operator<(cursor_data const & c) const -> bool
             {
@@ -50,14 +55,38 @@ namespace txl
                 c.offset_ = (c.offset_ % max_size);
                 return c;
             }
+
+            auto fetch(cursor_data & c) -> void
+            {
+                __atomic_load(&c.offset_, &offset_, static_cast<int>(std::memory_order_seq_cst));
+                __atomic_load(&c.cycle_, &cycle_, static_cast<int>(std::memory_order_seq_cst));
+            }
+
+            auto sync(cursor_data const & c) -> void
+            {
+                __atomic_store(&offset_, &c.offset_, static_cast<int>(std::memory_order_seq_cst));
+                __atomic_store(&cycle_, &c.cycle_, static_cast<int>(std::memory_order_seq_cst));
+            }
         };
 
         struct file_cursor_data
         {
             cursor_data head_;
             cursor_data tail_;
-        };
 
+            auto fetch(file_cursor_data & c) -> void
+            {
+                head_.fetch(c.head_);
+                tail_.fetch(c.tail_);
+            }
+
+            auto sync(file_cursor_data const & c) -> void
+            {
+                head_.sync(c.head_);
+                tail_.sync(c.tail_);
+            }
+        };
+    private:
         struct entry_data
         {
             uint32_t size_;
@@ -175,17 +204,20 @@ namespace txl
         auto read() -> result<buffer_ref>
         {
             auto * e = head_entry();
-            if (cur_.head_ < file_cursor()->head_)
+            file_cursor_data f_cur{};
+            f_cur.fetch(*file_cursor());
+            if (cur_.head_ < f_cur.head_)
             {
-                cur_ = *file_cursor();
+                cur_ = f_cur; //*file_cursor();
             }
             
             // Advance if we have room
-            if (cur_.head_ < file_cursor()->tail_ and cur_.head_.next(e->size_, entry_map().size()) <= file_cursor()->tail_)
+            if (cur_.head_ < f_cur.tail_ and cur_.head_.next(e->size_, entry_map().size()) <= f_cur.tail_)
             {
                 next_head();
             }
-            else if (file_cursor()->tail_ <= cur_.head_)
+
+            if (f_cur.tail_ <= cur_.head_)
             {
                 // End-of-file
                 return buffer_ref{};
@@ -204,7 +236,8 @@ namespace txl
                 ++cur_.tail_.cycle_;
             }
 
-            while (cur_.head_.next(entry_map().size(), entry_map().size()) <= cur_.tail_)
+            // Keep the head moving forward to fit new entries
+            while (cur_.head_.distance_from(cur_.tail_, entry_map().size()) >= static_cast<off_t>(entry_map().size() - bytes_needed))
             {
                 next_head();
             }
@@ -212,17 +245,22 @@ namespace txl
             auto * e = tail_entry();
             dst = buffer_ref{&e->data_, src.size()};
             dst.copy_from(src);
-            e->size_ = src.size();
+            __atomic_store_n(&e->size_ , src.size(), static_cast<int>(std::memory_order_seq_cst));
             
             next_tail();
+
+            // Stamp the next entry 0 so read() will stop gracefully
             if (cur_.tail_.offset_ + sizeof(entry_data) <= entry_map().size())
             {
-                tail_entry()->size_ = 0;
+                __atomic_store_n(&tail_entry()->size_, 0, static_cast<int>(std::memory_order_release));
             }
-            *file_cursor() = cur_;
+            file_cursor()->sync(cur_);
             
             return dst;
         }
+
+        auto cursor_internal() const -> file_cursor_data { return cur_; }
+        auto cursor_file() const -> file_cursor_data { return *file_cursor(); }
     };
 
     inline auto operator<<(std::ostream & os, ring_buffer_file::cursor_data const & c) -> std::ostream &

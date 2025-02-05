@@ -4,6 +4,8 @@ add_custom_target(test_io_reactor_data
 
 add_executable(test_rb_reader test_rb_reader.cpp)
 add_executable(test_rb_writer test_rb_writer.cpp)
+target_link_libraries(test_rb_reader atomic)
+target_link_libraries(test_rb_writer atomic)
 
 add_executable(test_action test_action.cpp)
 add_test(NAME test_action COMMAND test_action)
@@ -54,6 +56,7 @@ add_executable(test_ring_buffer test_ring_buffer.cpp)
 add_test(NAME test_ring_buffer COMMAND test_ring_buffer)
 add_executable(test_ring_buffer_file test_ring_buffer_file.cpp)
 add_test(NAME test_ring_buffer_file COMMAND test_ring_buffer_file)
+target_link_libraries(test_ring_buffer_file atomic)
 add_executable(test_socket test_socket.cpp)
 add_test(NAME test_socket COMMAND test_socket)
 add_executable(test_storage_union test_storage_union.cpp)
