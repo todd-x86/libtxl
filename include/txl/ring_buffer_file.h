@@ -7,6 +7,7 @@
 #include <txl/types.h>
 #include <txl/system_error.h>
 
+#include <algorithm>
 #include <iostream>
 #include <atomic>
 #include <string_view>
@@ -17,7 +18,6 @@ namespace txl
     class ring_buffer_file final
     {
     public:
-        static constexpr const uint16_t MAGIC = 0x1234;
         struct cursor_data;
         struct file_cursor_data;
 
@@ -71,13 +71,13 @@ namespace txl
         struct entry_data final
         {
             uint32_t size_;
-            uint16_t magic_;
             std::byte data_[0];
         };
 
         file storage_;
         memory_map map_;
         size_t max_size_;
+        size_t ring_padding_;
         file_cursor_data cur_{{0}, {0}};
 
         auto file_cursor() const -> file_cursor_data *
@@ -98,7 +98,6 @@ namespace txl
         auto cursor_entry(cursor_data const & c) const -> entry_data *
         {
             auto p = c.offset_ % entry_map().size();
-            //std::cout << "CURSOR ENTRY (o=" << c.offset_ << "): " << p << std::endl;
             return entry_at(p);
         }
 
@@ -124,12 +123,23 @@ namespace txl
         };
 
         ring_buffer_file(size_t max_size)
-            : max_size_(max_size)
+            : ring_buffer_file(max_size, max_size >> 1)
         {
         }
 
+        ring_buffer_file(size_t max_size, size_t ring_size)
+            : max_size_(max_size)
+            , ring_padding_(max_size - std::min(max_size, ring_size))
+        {
+        }
+        
         ring_buffer_file(std::string_view filename, open_mode mode, size_t max_size)
-            : ring_buffer_file(max_size)
+            : ring_buffer_file(filename, mode, max_size, max_size >> 1)
+        {
+        }
+
+        ring_buffer_file(std::string_view filename, open_mode mode, size_t max_size, size_t ring_size)
+            : ring_buffer_file(max_size, ring_size)
         {
             open(filename, mode).or_throw();
         }
@@ -176,21 +186,8 @@ namespace txl
                 });
         }
         
-        auto read3() -> result<buffer_ref>
-        {
-            while (true)
-            {
-                auto * e = cursor_entry(file_cursor()->head_);
-                if (e and e->magic_ == MAGIC)
-                {
-                    return buffer_ref{&e->data_, e->size_};
-                }
-            }
-        }
-
         auto read() -> result<buffer_ref>
         {
-            std::cout << "READ" << std::endl;
             auto f_cur = *file_cursor();
             if (f_cur.head_ > cur_.head_)
             {
@@ -201,16 +198,10 @@ namespace txl
             if (cur_.head_ >= f_cur.tail_)
             {
                 // Don't advance past tail
-                    std::cout << "NONE\n";
                 return buffer_ref{};
             }
 
             auto * e = cursor_entry(cur_.head_);
-            /*if (e and e->size_ != 0 and e->magic_ != MAGIC)
-            {
-                std::cout << "HEAD ERROR 1: " << cur_ << " | f=" << *file_cursor() << " | MAGIC=" << MAGIC << " vs " << e->magic_ << std::endl;
-                exit(0);
-            }*/
             if (e == nullptr or e->size_ == 0)
             {
                 // Loop around
@@ -219,7 +210,6 @@ namespace txl
                 if (cur_.head_ >= f_cur.tail_)
                 {
                     // Don't advance past tail
-                    std::cout << "NONE\n";
                     return buffer_ref{};
                 }
                 
@@ -227,11 +217,6 @@ namespace txl
             }
             
             // Move head forward
-            /*if (e->magic_ != MAGIC)
-            {
-                std::cout << "HEAD ERROR 2: " << cur_ << std::endl;
-                exit(0);
-            }*/
             cur_.head_.inc(total_entry_size(e->size_));
             return buffer_ref{&e->data_, e->size_};
         }
@@ -249,14 +234,9 @@ namespace txl
             }
 
             // Keep head in sync w/ tail
-            while (cur_.head_.distance(cur_.tail_) + extra_bytes_needed + bytes_needed + (128*1024) >= entry_map().size())
+            while (cur_.head_.distance(cur_.tail_) + extra_bytes_needed + bytes_needed + ring_padding_ >= entry_map().size())
             {
                 auto * e = cursor_entry(cur_.head_);
-                if (e and e->magic_ != MAGIC and e->magic_ != 0)
-                {
-                    std::cout << "HEAD ERROR: " << cur_ << " MAGIC=" << MAGIC << " vs " << e->magic_ << std::endl;
-                    exit(0);
-                }
                 if (e == nullptr or e->size_ == 0)
                 {
                     // Skip zero portion
@@ -267,58 +247,33 @@ namespace txl
 
                 // Move head forward
                 auto s = total_entry_size(e->size_);
-                if (s > 40)
-                {
-                    std::cout << "MOVE FORWARD (" << cur_ << "): " << s << std::endl;
-                }
+                
                 // Mark it empty
-                buffer_ref{e, s}.fill(static_cast<std::byte>('\0'));
+                e->size_ = 0;
+                //buffer_ref{e, s}.fill(static_cast<std::byte>('\0'));
                 cur_.head_.inc(s);
             }
 
             if (tte.size() >= bytes_needed)
             {
                 auto * e = cursor_entry(cur_.tail_);
-                if (e->magic_ != MAGIC and e->magic_ != 0)
-                {
-                    std::cout << "HEAD ERROR: " << cur_ << " MAGIC=" << MAGIC << " vs " << e->magic_ << std::endl;
-                    exit(0);
-                }
                 
                 dst = buffer_ref(&e->data_, src.size());
                 dst.copy_from(src);
-                e->magic_ = MAGIC;
                 e->size_ = src.size();
-                if (cursor_entry(cur_.tail_)->magic_ != MAGIC)
-                {
-                    std::cout << "WTF???" << std::endl;
-                    exit(0);
-                }
             }
             else if (tte.size() >= sizeof(entry_data))
             {
                 // Stamp 0 and move back to 0
-                cursor_entry(cur_.tail_)->magic_ = MAGIC;
                 cursor_entry(cur_.tail_)->size_ = 0;
 
                 cur_.tail_.inc(tte.size());
                 
                 auto * e = cursor_entry(cur_.tail_);
-                if (e->magic_ != MAGIC and e->magic_ != 0)
-                {
-                    std::cout << "HEAD ERROR: " << cur_ << " MAGIC=" << MAGIC << " vs " << e->magic_ << std::endl;
-                    exit(0);
-                }
 
                 dst = buffer_ref(&e->data_, src.size());
                 dst.copy_from(src);
-                e->magic_ = MAGIC;
                 e->size_ = src.size();
-                if (cursor_entry(cur_.tail_)->magic_ != MAGIC)
-                {
-                    std::cout << "WTF???" << std::endl;
-                    exit(0);
-                }
             }
             else
             {
@@ -326,22 +281,10 @@ namespace txl
                 cur_.tail_.inc(tte.size());
                 
                 auto * e = cursor_entry(cur_.tail_);
-                if (e->magic_ != MAGIC and e->magic_ != 0)
-                {
-                    std::cout << "HEAD ERROR: " << cur_ << " MAGIC=" << MAGIC << " vs " << e->magic_ << std::endl;
-                    exit(0);
-                }
 
                 dst = buffer_ref(&e->data_, src.size());
                 dst.copy_from(src);
-                e->magic_ = MAGIC;
                 e->size_ = src.size();
-
-                if (cursor_entry(cur_.tail_)->magic_ != MAGIC)
-                {
-                    std::cout << "WTF???" << std::endl;
-                    exit(0);
-                }
             }
 
             cur_.tail_.inc(bytes_needed);

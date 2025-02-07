@@ -3,7 +3,7 @@
 
 int main(int argc, char * argv[])
 {
-    txl::ring_buffer_file rb{argv[1], txl::ring_buffer_file::read_only, 4096 * 64};
+    txl::ring_buffer_file rb{argv[1], txl::ring_buffer_file::read_only, /*4096 * 64*/ 4*1024*1024, 1024*1024};
     while (true)
     {
         auto c = rb.cursor_internal();
@@ -11,13 +11,14 @@ int main(int argc, char * argv[])
         auto r = rb.read().or_throw();
         if (not r.empty())
         {
-            if (r.size() > 27)
+            if (r.size() > 57)
             {
                 std::cout << r.size() << " bytes (I=" << c << ", F=" << f << ")" << std::endl;
             }
-            std::cout << r.size() << " bytes\n";
-            //std::cout << r.to_string_view() << std::endl;
+            //std::cout << r.size() << " bytes\n";
+            std::cout << r.to_string_view() << std::endl;
         }
+        //usleep(300000);
     }
     return 0;
 }
