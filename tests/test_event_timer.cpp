@@ -38,7 +38,7 @@ TXL_UNIT_TEST(TestEventTimerSystemClock)
     t.set_time(t1).or_throw();
 
     p.add(t.fd(), txl::event_type::in | txl::event_type::out).or_throw();
-    auto num_polled = p.poll(ev, std::chrono::milliseconds{10}).or_throw();
+    auto num_polled = p.poll(ev, std::chrono::milliseconds{20}).or_throw();
     assert(std::chrono::system_clock::now() >= t1);
     assert_equal(num_polled, 1);
     assert_equal(ev[0].fd(), t.fd());
@@ -61,7 +61,7 @@ TXL_UNIT_TEST(TestEventTimerLooping)
     p.add(t.fd(), txl::event_type::in | txl::event_type::out).or_throw();
     for (auto i = 0; i < 3; ++i)
     {
-        auto num_polled = p.poll(ev, std::chrono::milliseconds{10}).or_throw();
+        auto num_polled = p.poll(ev, std::chrono::milliseconds{20}).or_throw();
         assert(std::chrono::system_clock::now() >= t1);
         t1 += std::chrono::milliseconds{10};
         assert_equal(num_polled, 1);

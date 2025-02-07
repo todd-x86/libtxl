@@ -16,6 +16,7 @@ namespace txl
         std::mutex barrier_mutex_{};
         std::condition_variable barrier_{};
         std::vector<std::thread> threads_{};
+        uint8_t thread_scale_ = 5;
         volatile bool ready_ = false;
 
         auto run_n_threads(size_t n) -> void
@@ -87,11 +88,13 @@ namespace txl
     public:
         auto run() -> void
         {
-            run_n_threads(1);
-            run_n_threads(2); 
-            run_n_threads(4); 
-            run_n_threads(8); 
-            run_n_threads(16); 
+            // Scale up the number of threads
+            size_t n = 1;
+            for (uint8_t i = 0; i < thread_scale_; ++i)
+            {
+                run_n_threads(n);
+                n <<= 1;
+            }
         }
 
         auto join() -> void
