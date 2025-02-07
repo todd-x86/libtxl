@@ -15,6 +15,7 @@ int main(int argc, char * argv[])
             {
                 std::cout << r.size() << " bytes (I=" << c << ", F=" << f << ")" << std::endl;
             }
+            std::cout << r.size() << " bytes\n";
             //std::cout << r.to_string_view() << std::endl;
         }
     }

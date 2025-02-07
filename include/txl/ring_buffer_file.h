@@ -14,89 +14,71 @@
 
 namespace txl
 {
-    /**
-     * 0x00: [Head:8][Tail:8]
-     * 0x10: [Cycle:8][EntrySize:4][Data...]...
-     */
     class ring_buffer_file final
     {
     public:
+        static constexpr const uint16_t MAGIC = 0x1234;
         struct cursor_data;
         struct file_cursor_data;
 
         friend auto operator<<(std::ostream & os, cursor_data const & c) -> std::ostream &;
         friend auto operator<<(std::ostream & os, file_cursor_data const & c) -> std::ostream &;
-
-        struct cursor_data
+        
+        struct cursor_data final
         {
             uint64_t offset_;
-            uint64_t cycle_;
 
-            auto distance_from(cursor_data const & c, size_t max_size) const -> off_t
+            auto distance(cursor_data const & c) const -> int64_t
             {
-                return ((c.cycle_ - cycle_) * max_size) + (c.offset_ - offset_);
+                return c.offset_ - offset_;
+            }
+
+            auto inc(size_t s) -> void
+            {
+                // TODO: something better here...
+                offset_ += s;
             }
 
             auto operator<(cursor_data const & c) const -> bool
             {
-                return cycle_ < c.cycle_ or (cycle_ == c.cycle_ and offset_ < c.offset_);
-            }
-            
-            auto operator<=(cursor_data const & c) const -> bool
-            {
-                return cycle_ < c.cycle_ or (cycle_ == c.cycle_ and offset_ <= c.offset_);
+                return offset_ < c.offset_;
             }
 
-            auto next(uint64_t offset, uint64_t max_size) -> cursor_data
+            auto operator==(cursor_data const & c) const -> bool
             {
-                auto c = *this;
-                c.offset_ += offset;
-                c.cycle_ += (c.offset_ / max_size);
-                c.offset_ = (c.offset_ % max_size);
-                return c;
+                return not (*this < c) and not (c < *this);
             }
 
-            auto fetch(cursor_data & c) -> void
+            auto operator>(cursor_data const & c) const -> bool
             {
-                __atomic_load(&c.offset_, &offset_, static_cast<int>(std::memory_order_seq_cst));
-                __atomic_load(&c.cycle_, &cycle_, static_cast<int>(std::memory_order_seq_cst));
+                return c < *this;
             }
 
-            auto sync(cursor_data const & c) -> void
+            auto operator>=(cursor_data const & c) const -> bool
             {
-                __atomic_store(&offset_, &c.offset_, static_cast<int>(std::memory_order_seq_cst));
-                __atomic_store(&cycle_, &c.cycle_, static_cast<int>(std::memory_order_seq_cst));
+                return (*this > c) or (*this == c);
             }
         };
 
-        struct file_cursor_data
+        struct file_cursor_data final
         {
             cursor_data head_;
+            char pad1_[std::hardware_constructive_interference_size];
             cursor_data tail_;
-
-            auto fetch(file_cursor_data & c) -> void
-            {
-                head_.fetch(c.head_);
-                tail_.fetch(c.tail_);
-            }
-
-            auto sync(file_cursor_data const & c) -> void
-            {
-                head_.sync(c.head_);
-                tail_.sync(c.tail_);
-            }
+            char pad2_[std::hardware_constructive_interference_size];
         };
     private:
-        struct entry_data
+        struct entry_data final
         {
             uint32_t size_;
+            uint16_t magic_;
             std::byte data_[0];
         };
 
         file storage_;
         memory_map map_;
         size_t max_size_;
-        file_cursor_data cur_{{0, 0}, {0, 0}};
+        file_cursor_data cur_{{0}, {0}};
 
         auto file_cursor() const -> file_cursor_data *
         {
@@ -113,33 +95,26 @@ namespace txl
             return entry_map().slice(offset).to_alias<entry_data>();
         }
 
-        auto head_entry() const -> entry_data *
+        auto cursor_entry(cursor_data const & c) const -> entry_data *
         {
-            return entry_at(cur_.head_.offset_);
+            auto p = c.offset_ % entry_map().size();
+            //std::cout << "CURSOR ENTRY (o=" << c.offset_ << "): " << p << std::endl;
+            return entry_at(p);
         }
 
-        auto tail_entry() const -> entry_data *
+        auto tail_to_end() const -> buffer_ref
         {
-            return entry_at(cur_.tail_.offset_);
+            return entry_map().slice(cur_.tail_.offset_ % entry_map().size());
         }
 
-        auto next_head() -> void
+        auto head_to_end() const -> buffer_ref
         {
-            auto * e = head_entry();
-            auto total_bytes = sizeof(entry_data) + e->size_;
-            cur_.head_.offset_ += total_bytes;
-            if (cur_.head_.offset_ + sizeof(entry_data) > entry_map().size())
-            {
-                // Loop around
-                ++cur_.head_.cycle_;
-                cur_.head_.offset_ = 0;
-            }
+            return entry_map().slice(cur_.head_.offset_ % entry_map().size());
         }
 
-        auto next_tail() -> void
+        static auto total_entry_size(size_t bytes) -> uint64_t
         {
-            auto * e = tail_entry();
-            cur_.tail_.offset_ += sizeof(entry_data) + e->size_;
+            return sizeof(entry_data) + bytes;
         }
     public:
         enum open_mode
@@ -200,62 +175,177 @@ namespace txl
                     return storage_.close();
                 });
         }
+        
+        auto read3() -> result<buffer_ref>
+        {
+            while (true)
+            {
+                auto * e = cursor_entry(file_cursor()->head_);
+                if (e and e->magic_ == MAGIC)
+                {
+                    return buffer_ref{&e->data_, e->size_};
+                }
+            }
+        }
 
         auto read() -> result<buffer_ref>
         {
-            auto * e = head_entry();
-            file_cursor_data f_cur{};
-            f_cur.fetch(*file_cursor());
-            if (cur_.head_ < f_cur.head_)
+            std::cout << "READ" << std::endl;
+            auto f_cur = *file_cursor();
+            if (f_cur.head_ > cur_.head_)
             {
-                cur_ = f_cur; //*file_cursor();
-            }
-            
-            // Advance if we have room
-            if (cur_.head_ < f_cur.tail_ and cur_.head_.next(e->size_, entry_map().size()) <= f_cur.tail_)
-            {
-                next_head();
+                // Update our out-of-date cursor
+                cur_ = f_cur;
             }
 
-            if (f_cur.tail_ <= cur_.head_)
+            if (cur_.head_ >= f_cur.tail_)
             {
-                // End-of-file
+                // Don't advance past tail
+                    std::cout << "NONE\n";
                 return buffer_ref{};
             }
+
+            auto * e = cursor_entry(cur_.head_);
+            /*if (e and e->size_ != 0 and e->magic_ != MAGIC)
+            {
+                std::cout << "HEAD ERROR 1: " << cur_ << " | f=" << *file_cursor() << " | MAGIC=" << MAGIC << " vs " << e->magic_ << std::endl;
+                exit(0);
+            }*/
+            if (e == nullptr or e->size_ == 0)
+            {
+                // Loop around
+                cur_.head_.inc(head_to_end().size());
+                
+                if (cur_.head_ >= f_cur.tail_)
+                {
+                    // Don't advance past tail
+                    std::cout << "NONE\n";
+                    return buffer_ref{};
+                }
+                
+                e = cursor_entry(cur_.head_);
+            }
+            
+            // Move head forward
+            /*if (e->magic_ != MAGIC)
+            {
+                std::cout << "HEAD ERROR 2: " << cur_ << std::endl;
+                exit(0);
+            }*/
+            cur_.head_.inc(total_entry_size(e->size_));
             return buffer_ref{&e->data_, e->size_};
         }
 
         auto write(buffer_ref src) -> result<buffer_ref>
         {
-            auto bytes_needed = sizeof(entry_data) + src.size();
-            auto dst = entry_map().slice_n(cur_.tail_.offset_, bytes_needed);
-            if (dst.size() < bytes_needed)
+            auto bytes_needed = total_entry_size(src.size());
+            auto tte = tail_to_end();
+            buffer_ref dst{};
+
+            auto extra_bytes_needed = 0;
+            if (tte.size() < bytes_needed)
             {
-                // Loop around
-                cur_.tail_.offset_ = 0;
-                ++cur_.tail_.cycle_;
+                extra_bytes_needed = tte.size();
             }
 
-            // Keep the head moving forward to fit new entries
-            while (cur_.head_.distance_from(cur_.tail_, entry_map().size()) >= static_cast<off_t>(entry_map().size() - bytes_needed))
+            // Keep head in sync w/ tail
+            while (cur_.head_.distance(cur_.tail_) + extra_bytes_needed + bytes_needed + (128*1024) >= entry_map().size())
             {
-                next_head();
+                auto * e = cursor_entry(cur_.head_);
+                if (e and e->magic_ != MAGIC and e->magic_ != 0)
+                {
+                    std::cout << "HEAD ERROR: " << cur_ << " MAGIC=" << MAGIC << " vs " << e->magic_ << std::endl;
+                    exit(0);
+                }
+                if (e == nullptr or e->size_ == 0)
+                {
+                    // Skip zero portion
+                    head_to_end().fill(static_cast<std::byte>('\0'));
+                    cur_.head_.inc(head_to_end().size());
+                    e = cursor_entry(cur_.head_);
+                }
+
+                // Move head forward
+                auto s = total_entry_size(e->size_);
+                if (s > 40)
+                {
+                    std::cout << "MOVE FORWARD (" << cur_ << "): " << s << std::endl;
+                }
+                // Mark it empty
+                buffer_ref{e, s}.fill(static_cast<std::byte>('\0'));
+                cur_.head_.inc(s);
             }
 
-            auto * e = tail_entry();
-            dst = buffer_ref{&e->data_, src.size()};
-            dst.copy_from(src);
-            __atomic_store_n(&e->size_ , src.size(), static_cast<int>(std::memory_order_seq_cst));
-            
-            next_tail();
-
-            // Stamp the next entry 0 so read() will stop gracefully
-            if (cur_.tail_.offset_ + sizeof(entry_data) <= entry_map().size())
+            if (tte.size() >= bytes_needed)
             {
-                __atomic_store_n(&tail_entry()->size_, 0, static_cast<int>(std::memory_order_release));
+                auto * e = cursor_entry(cur_.tail_);
+                if (e->magic_ != MAGIC and e->magic_ != 0)
+                {
+                    std::cout << "HEAD ERROR: " << cur_ << " MAGIC=" << MAGIC << " vs " << e->magic_ << std::endl;
+                    exit(0);
+                }
+                
+                dst = buffer_ref(&e->data_, src.size());
+                dst.copy_from(src);
+                e->magic_ = MAGIC;
+                e->size_ = src.size();
+                if (cursor_entry(cur_.tail_)->magic_ != MAGIC)
+                {
+                    std::cout << "WTF???" << std::endl;
+                    exit(0);
+                }
             }
-            file_cursor()->sync(cur_);
-            
+            else if (tte.size() >= sizeof(entry_data))
+            {
+                // Stamp 0 and move back to 0
+                cursor_entry(cur_.tail_)->magic_ = MAGIC;
+                cursor_entry(cur_.tail_)->size_ = 0;
+
+                cur_.tail_.inc(tte.size());
+                
+                auto * e = cursor_entry(cur_.tail_);
+                if (e->magic_ != MAGIC and e->magic_ != 0)
+                {
+                    std::cout << "HEAD ERROR: " << cur_ << " MAGIC=" << MAGIC << " vs " << e->magic_ << std::endl;
+                    exit(0);
+                }
+
+                dst = buffer_ref(&e->data_, src.size());
+                dst.copy_from(src);
+                e->magic_ = MAGIC;
+                e->size_ = src.size();
+                if (cursor_entry(cur_.tail_)->magic_ != MAGIC)
+                {
+                    std::cout << "WTF???" << std::endl;
+                    exit(0);
+                }
+            }
+            else
+            {
+                // Just move to the end and go back
+                cur_.tail_.inc(tte.size());
+                
+                auto * e = cursor_entry(cur_.tail_);
+                if (e->magic_ != MAGIC and e->magic_ != 0)
+                {
+                    std::cout << "HEAD ERROR: " << cur_ << " MAGIC=" << MAGIC << " vs " << e->magic_ << std::endl;
+                    exit(0);
+                }
+
+                dst = buffer_ref(&e->data_, src.size());
+                dst.copy_from(src);
+                e->magic_ = MAGIC;
+                e->size_ = src.size();
+
+                if (cursor_entry(cur_.tail_)->magic_ != MAGIC)
+                {
+                    std::cout << "WTF???" << std::endl;
+                    exit(0);
+                }
+            }
+
+            cur_.tail_.inc(bytes_needed);
+            *file_cursor() = cur_;
             return dst;
         }
 
@@ -265,12 +355,14 @@ namespace txl
 
     inline auto operator<<(std::ostream & os, ring_buffer_file::cursor_data const & c) -> std::ostream &
     {
-        os << "(O=" << c.offset_ << ", C=" << c.cycle_ << ")";
+        //os << "(O=" << c.offset_ << ", C=" << c.cycle_ << ")";
+        os << "(O=" << c.offset_ << ")";
         return os;
     }
     inline auto operator<<(std::ostream & os, ring_buffer_file::file_cursor_data const & c) -> std::ostream &
     {
-        os << "H=" << c.head_ << " | T=" << c.tail_;
+        //os << "H=" << c.head_ << " | T=" << c.tail_;
+        os << "H=" << c.head_ << " | T=" << c.tail_ << " (d=" << c.head_.distance(c.tail_) << ")";
         return os;
     }
 }

@@ -86,6 +86,14 @@ namespace txl
         {
         }
 
+        buffer_ref(buffer_ref const &) = default;
+        buffer_ref(buffer_ref && b)
+            : buffer_ref()
+        {
+            std::swap(buffer_, b.buffer_);
+            std::swap(length_, b.length_);
+        }
+
         template<class T>
         static inline auto cast(T const & data) -> buffer_ref
         {
@@ -96,6 +104,11 @@ namespace txl
         static inline auto cast(T & data) -> buffer_ref
         {
             return {reinterpret_cast<void *>(&data), sizeof(T)};
+        }
+
+        auto fill(std::byte b) -> void
+        {
+            std::fill(begin(), end(), b);
         }
 
         auto compare(buffer_ref const & other) const -> int
@@ -133,12 +146,12 @@ namespace txl
             return not (*this == other);
         }
 
-        auto slice_n(size_t pos, size_t len) -> buffer_ref
+        auto slice_n(size_t pos, size_t len) const -> buffer_ref
         {
             return slice(pos, pos + len);
         }
 
-        auto slice(size_t begin, size_t end) -> buffer_ref
+        auto slice(size_t begin, size_t end) const -> buffer_ref
         {
             auto buf = static_cast<char *>(buffer_);
             if (begin >= length_ or end <= begin)
@@ -149,7 +162,7 @@ namespace txl
             return {static_cast<void *>(std::next(buf, begin)), end};
         }
 
-        auto slice(size_t begin) -> buffer_ref
+        auto slice(size_t begin) const -> buffer_ref
         {
             return slice(begin, length_);
         }
@@ -162,7 +175,19 @@ namespace txl
             return bytes_to_copy;
         }
 
-        auto operator=(std::string_view s) -> buffer_ref
+        auto operator=(buffer_ref const &) -> buffer_ref & = default;
+
+        auto operator=(buffer_ref && b) -> buffer_ref &
+        {
+            if (&b != this)
+            {
+                std::swap(buffer_, b.buffer_);
+                std::swap(length_, b.length_);
+            }
+            return *this;
+        }
+
+        auto operator=(std::string_view s) -> buffer_ref &
         {
             // TODO: is this bad design?
             copy_from(s);
@@ -182,10 +207,26 @@ namespace txl
         auto to_string_view() const -> std::string_view { return {static_cast<char const *>(data()), size()}; }
         
         template<class T>
-        auto to_alias(size_t byte_offset = 0) -> T * { return reinterpret_cast<T *>(std::next(begin(), byte_offset)); }
+        auto to_alias(size_t byte_offset = 0) -> T *
+        {
+            auto e = std::next(begin(), byte_offset + sizeof(T));
+            if (e <= end())
+            {
+                return reinterpret_cast<T *>(std::next(begin(), byte_offset));
+            }
+            return nullptr;
+        }
         
         template<class T>
-        auto to_alias(size_t byte_offset = 0) const -> T const * { return reinterpret_cast<T const *>(std::next(begin(), byte_offset)); }
+        auto to_alias(size_t byte_offset = 0) const -> T const *
+        {
+            auto e = std::next(begin(), byte_offset + sizeof(T));
+            if (e <= end())
+            {
+                return reinterpret_cast<T const *>(std::next(begin(), byte_offset));
+            }
+            return nullptr;
+        }
 
         auto empty() const -> bool { return length_ == 0; }
         auto data() -> void * { return buffer_; }
