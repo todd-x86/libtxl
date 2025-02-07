@@ -13,6 +13,7 @@ namespace txl
     class threading_unit_test_base
     {
     private:
+        static const constexpr uint8_t MAX_THREAD_SCALE = 10;
         std::mutex barrier_mutex_{};
         std::condition_variable barrier_{};
         std::vector<std::thread> threads_{};
@@ -103,6 +104,12 @@ namespace txl
             {
                 t.join();
             }
+        }
+
+        auto set_thread_scale(uint8_t scale) -> uint8_t
+        {
+            thread_scale_ = std::min(std::max(scale, static_cast<uint8_t>(1)), MAX_THREAD_SCALE);
+            return thread_scale_;
         }
     };
     
