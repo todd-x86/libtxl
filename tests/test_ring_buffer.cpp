@@ -36,11 +36,11 @@ TXL_UNIT_TEST(ring_buffer)
     
     rb.emplace(997);
     assert(test::ctor == 3);
-    assert(test::dtor == 0);
+    assert(test::dtor == 1);
     
     rb.emplace(996);
     assert(test::ctor == 4);
-    assert(test::dtor == 1);
+    assert(test::dtor == 2);
 }
 
 TXL_UNIT_TEST(ring_buffer_pod)
@@ -70,6 +70,36 @@ TXL_UNIT_TEST(ring_buffer_size)
     rb.emplace(1);
     rb.emplace(1);
     assert(rb.size() == 3);
+}
+
+TXL_UNIT_TEST(ring_buffer_read)
+{
+    txl::ring_buffer<int> rb(4);
+
+    rb.emplace(1);
+    rb.emplace(2);
+    rb.emplace(3);
+
+    assert_equal(1, *rb.read());
+    assert_equal(2, *rb.read());
+    assert_equal(3, *rb.read());
+    assert_equal(std::optional<int>{}, rb.read());
+    assert_equal(std::optional<int>{}, rb.read());
+    assert_equal(std::optional<int>{}, rb.read());
+    
+    rb.emplace(4);
+    rb.emplace(5);
+    assert_equal(4, *rb.read());
+
+    // 5, 6, 7 in buffer
+    rb.emplace(6);
+    rb.emplace(7);
+    assert_equal(5, *rb.read());
+
+    // 7, 8, 9 in buffer
+    rb.emplace(8);
+    rb.emplace(9);
+    assert_equal(7, *rb.read());
 }
 
 TXL_RUN_TESTS()

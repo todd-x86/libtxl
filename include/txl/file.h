@@ -166,5 +166,23 @@ namespace txl
             auto res = ::ftruncate(fd_, size);
             return handle_system_error(res);
         }
+
+        auto punch_hole(off_t offset, size_t size) -> result<void>
+        {
+            auto res = ::fallocate(fd_, FALLOC_FL_KEEP_SIZE | FALLOC_FL_PUNCH_HOLE, offset, static_cast<off_t>(size));
+            return handle_system_error(res);
+        }
+        
+        auto collapse_range(off_t offset, size_t size) -> result<void>
+        {
+            auto res = ::fallocate(fd_, FALLOC_FL_COLLAPSE_RANGE, offset, static_cast<off_t>(size));
+            return handle_system_error(res);
+        }
+
+        auto sync() -> result<void>
+        {
+            auto res = ::fsync(fd_);
+            return handle_system_error(res);
+        }
     };
 }

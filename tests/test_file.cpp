@@ -1,12 +1,16 @@
 #include <txl/unit_test.h>
 #include <txl/copy.h>
 #include <txl/file.h>
+#include <txl/linux.h>
 #include <txl/read_string.h>
 #include <txl/stream_writer.h>
 #include <txl/types.h>
 
+#include <string_view>
 #include <sstream>
 #include <array>
+
+using namespace std::literals;
 
 TXL_UNIT_TEST(file_write_read)
 {
@@ -137,6 +141,42 @@ TXL_UNIT_TEST(file_pread_pwrite)
     assert_equal("LOOP"sv.size(), f.write(13, "LOOP"sv).or_throw().size());
     rd = f.read(10, txl::buffer_ref{betty_boop}.slice(0, 6)).or_throw();
     assert_equal("ba-LOO"sv, rd.to_string_view());
+}
+
+TXL_UNIT_TEST(file_truncate)
+{
+    auto wr = txl::file{"test.txt", "w"};
+    auto rd = txl::file{"test.txt", "r"};
+
+    for (auto i = 0; i < (65536/5)+1; ++i)
+    {
+        wr.write("Hello"sv).or_throw();
+    }
+    for (auto i = 0; i < (65536/5)+1; ++i)
+    {
+        auto s = txl::read_string(rd, 5).or_throw();
+        assert_equal(std::string_view{s}, "Hello"sv);
+    }
+
+    wr.write("World"sv).or_throw();
+    wr.sync().or_throw();
+
+    auto fs1 = txl::get_vfs_info(wr.fd()).or_throw();
+
+    wr.punch_hole(0, 65536).or_throw();
+    wr.sync().or_throw();
+    
+    auto fs2 = txl::get_vfs_info(wr.fd()).or_throw();
+
+    // We gained 16 blocks back (16*4KB = 64KB)
+    assert_equal(fs1.num_free_blocks() + 16, fs2.num_free_blocks());
+
+    auto s = txl::read_string(rd, 9).or_throw();
+    assert_equal(std::string_view{s}, "World"sv);
+    
+    auto rd2 = txl::file{"test.txt", "r"};
+    s = txl::read_string(rd2, 9).or_throw();
+    assert_equal(std::string_view{s}, "\0\0\0\0\0\0\0\0\0"sv);
 }
 
 TXL_RUN_TESTS()

@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cstddef>
+#include <optional>
 #include <vector>
 
 namespace txl
@@ -11,7 +13,6 @@ namespace txl
         struct slot
         {
             uint8_t data_[sizeof(Value)];
-            bool emplaced_ = false;
 
             Value & val() { return *reinterpret_cast<Value *>(data_); }
             Value const & val() const { return *reinterpret_cast<Value const *>(data_); }
@@ -36,24 +37,44 @@ namespace txl
                 return ((head_ + capacity() - 1) - tail_);
             }
         }
-        size_t capacity() const { return slots_.size(); }
+
+        auto capacity() const -> size_t { return slots_.size(); }
+
+        auto read() -> std::optional<Value>
+        {
+            if (head_ == tail_)
+            {
+                return {};
+            }
+
+            auto res = std::make_optional(std::move(slots_[head_].val()));
+
+            ++head_;
+            if (head_ == capacity())
+            {
+                head_ = 0;
+            }
+
+            return res;
+        }
 
         template<class... Args>
-        void emplace(Args && ... args)
+        auto emplace(Args && ... args) -> void
         {
-            auto & s = slots_[tail_];
-            if (s.emplaced_)
+            if (head_ == ((tail_ + 1) % slots_.size()))
             {
-                // Destruct old one
-                s.val().~Value();
+                // Destruct old value
+                slots_[head_].val().~Value();
             }
+
+            auto & s = slots_[tail_];
             new(s.data_) Value(std::forward<Args>(args)...);
-            s.emplaced_ = true;
             ++tail_;
             if (tail_ == slots_.size())
             {
                 tail_ = 0;
             }
+
             // Move head forward
             if (head_ == tail_)
             {
