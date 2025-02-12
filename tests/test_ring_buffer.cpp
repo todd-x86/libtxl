@@ -1,5 +1,6 @@
 #include <txl/unit_test.h>
 #include <txl/ring_buffer.h>
+#include <txl/file.h>
 
 struct test
 {
@@ -100,6 +101,25 @@ TXL_UNIT_TEST(ring_buffer_read)
     rb.emplace(8);
     rb.emplace(9);
     assert_equal(7, *rb.read());
+}
+
+TXL_UNIT_TEST(ring_buffer_file)
+{
+    txl::file storage{};
+    storage.open("test000.bin", "w+").or_throw();
+    storage.truncate(4096).or_throw();
+    
+    {
+        txl::ring_buffer<int> rb(100, txl::ring_buffer_flags::preserve_values, storage.fd());
+        for (auto i = 0; i < 150; ++i)
+        {
+            rb.emplace(i);
+        }
+    }
+    {
+        txl::ring_buffer<int> rb(100, txl::ring_buffer_flags::none, storage.fd());
+        assert_equal(51, *rb.read());
+    }
 }
 
 TXL_RUN_TESTS()
