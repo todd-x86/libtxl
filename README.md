@@ -1,10 +1,6 @@
 # TXL
 ## Todd's eXtension Library for C++
 
-# #include <txl/action.h>
-
-An experimental continuation library for chaining lambdas and capturing state.
-
 # #include <txl/app.h>
 
 Utility function for retrieving the running application's path as a `std::filesystem::path`.

@@ -7,8 +7,6 @@ add_executable(test_rb_writer test_rb_writer.cpp)
 target_link_libraries(test_rb_reader atomic)
 target_link_libraries(test_rb_writer atomic)
 
-add_executable(test_action test_action.cpp)
-add_test(NAME test_action COMMAND test_action)
 add_executable(test_backoff test_backoff.cpp)
 add_test(NAME test_backoff COMMAND test_backoff)
 add_executable(test_bitwise test_bitwise.cpp)
