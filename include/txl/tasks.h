@@ -2,20 +2,12 @@
 
 #include <functional>
 #include <memory>
+#include <optional>
 
 namespace txl
 {
-    struct task_context;
-
-    struct task_work_base
+    class task_context_base
     {
-        virtual auto execute(task_context &) -> void = 0;
-        virtual auto next() -> task_work_base * = 0;
-    };
-
-    class task_context
-    {
-        friend class task_runner_base;
     private:
         bool success_ = true;
    
@@ -31,106 +23,138 @@ namespace txl
     };
 
     template<class ReturnType>
-    class task_work : public task_work_base
+    struct task_context : task_context_base
     {
     private:
-        std::function<ReturnType(task_context &)> func_;
-        std::unique_ptr<task_work_base> next_;
+        std::optional<ReturnType> ret_;
+    public:
+        auto set_result(ReturnType && value) -> void
+        {
+            ret_ = std::make_optional(std::move(value));
+        }
+        
+        auto result() const -> ReturnType const &
+        {
+            return *ret_;
+        }
+
+        auto result() -> ReturnType &
+        {
+            return *ret_;
+        }
+
+        auto release_result() -> ReturnType &&
+        {
+            return std::move(*ret_);
+        }
+    };
+    
+    template<>
+    struct task_context<void> : task_context_base
+    {
+    };
+
+    template<class ReturnType>
+    class task_work
+    {
+    private:
+        std::function<ReturnType(task_context<ReturnType> &)> func_;
+        std::unique_ptr<task_work<ReturnType>> next_;
     public:
         task_work(std::function<ReturnType()> && func)
-            : func_([func=std::move(func)](task_context &) {
-                func();
+            : func_([func=std::move(func)](task_context<ReturnType> &) {
+                return func();
             })
         {
         }
         
-        task_work(std::function<ReturnType(task_context &)> && func)
+        task_work(std::function<ReturnType(task_context<ReturnType> &)> && func)
             : func_(std::move(func))
         {
         }
 
-        auto chain(std::unique_ptr<task_work_base> && next) -> void
+        auto chain(std::unique_ptr<task_work<ReturnType>> && next) -> void
         {
             next_ = std::move(next);
         }
 
-        auto execute(task_context & ctx) -> void override
+        auto execute(task_context<ReturnType> & ctx) -> ReturnType
         {
-            func_(ctx);
+            return func_(ctx);
         }
         
-        auto next() -> task_work_base * override
+        auto next() -> task_work<ReturnType> * 
         {
             return next_.get();
         }
     };
 
-    struct task_work_runner
-    {
-        virtual auto run(task_work_base & work, task_context & context) -> void = 0;
-    };
-
-    struct inline_task_work_runner : task_work_runner
-    {
-        auto run(task_work_base & work, task_context & context) -> void override
-        {
-            work.execute(context);
-        }
-    };
-
-    class task_base
-    {
-        friend class task_runner_base;
-    protected:
-        virtual auto work() const -> task_work_base * = 0;
-    };
-
-    class task_runner_base
-    {
-    protected:
-        static auto get_task_work(task_base & task) -> task_work_base *
-        {
-            return task.work();
-        }
-    public:
-        virtual auto run(task_base & task) -> void = 0;
-    };
-
-    class task_runner : public task_runner_base
-    {
-    private:
-        std::unique_ptr<task_work_runner> work_runner_;
-    public:
-        task_runner(std::unique_ptr<task_work_runner> && runner)
-            : work_runner_(std::move(runner))
-        {
-        }
-
-        auto run(task_base & task) -> void override
-        {
-            task_context ctx{};
-
-            auto work = get_task_work(task);
-            while (work)
-            {
-                work_runner_->run(*work, ctx);
-                work = work->next();
-            }
-        }
-    };
+    template<class ReturnType>
+    class task_runner;
 
     template<class ReturnType>
-    class task : public task_base
+    class task
     {
-    protected:
-        virtual auto work() const -> task_work_base *
+    private:
+        std::unique_ptr<task_work<ReturnType>> work_;
+        task_work<ReturnType> * tail_ = nullptr;
+        
+        task(std::unique_ptr<task_work<ReturnType>> && w)
+            : work_(std::move(w))
+            , tail_(work_.get())
         {
-            return nullptr;
         }
+    public:
+        task() = default;
+        task(std::function<ReturnType()> && f)
+            : task(std::make_unique<task_work<ReturnType>>(std::move(f)))
+        {
+        }
+
+        task(task const &) = delete;
+
+        task(task && t)
+            : work_(std::move(t.work_))
+        {
+            std::swap(tail_, t.tail_);
+        }
+
+        auto operator=(task const &) -> task & = delete;
+
+        auto operator=(task && t) -> task &
+        {
+            if (this != &t)
+            {
+                work_ = std::move(t.work_);
+                std::swap(tail_, t.tail_);
+            }
+            return *this;
+        }
+
+        auto then(std::function<ReturnType()> && f) -> task<ReturnType> &&
+        {
+            auto next = std::make_unique<task_work<ReturnType>>(std::move(f));
+            auto new_tail = next.get();
+            tail_->chain(std::move(next));
+            tail_ = new_tail;
+            return std::move(*this);
+        }
+
+        auto then(std::function<ReturnType(task_context<ReturnType> &)> && f) -> task<ReturnType> &&
+        {
+            auto next = std::make_unique<task_work<ReturnType>>(std::move(f));
+            auto new_tail = next.get();
+            tail_->chain(std::move(next));
+            tail_ = new_tail;
+            return std::move(*this);
+        }
+        
+        auto operator()() -> ReturnType;
+        auto operator()(task_runner<ReturnType> & runner) -> ReturnType;
     };
 
     template<>
-    class task<void> : public task_base
+    class task<void>
     {
     private:
         std::unique_ptr<task_work<void>> work_;
@@ -141,34 +165,108 @@ namespace txl
             , tail_(work_.get())
         {
         }
-    protected:
-        auto work() const -> task_work_base * override
-        {
-            return work_.get();
-        }
     public:
+        task() = default;
         task(std::function<void()> && f)
             : task(std::make_unique<task_work<void>>(std::move(f)))
         {
+        }
+        
+        task(task const &) = delete;
+
+        task(task && t)
+            : work_(std::move(t.work_))
+        {
+            std::swap(tail_, t.tail_);
+        }
+
+        auto operator=(task const &) -> task & = delete;
+
+        auto operator=(task && t) -> task &
+        {
+            if (this != &t)
+            {
+                work_ = std::move(t.work_);
+                std::swap(tail_, t.tail_);
+            }
+            return *this;
         }
 
         auto then(std::function<void()> && f) -> task<void> &&
         {
             auto next = std::make_unique<task_work<void>>(std::move(f));
+            auto new_tail = next.get();
             tail_->chain(std::move(next));
-            tail_ = next.get();
+            tail_ = new_tail;
             return std::move(*this);
         }
 
-        auto then(std::function<void(task_context &)> && f) -> task<void> &&
+        auto then(std::function<void(task_context<void> &)> && f) -> task<void> &&
         {
             auto next = std::make_unique<task_work<void>>(std::move(f));
+            auto new_tail = next.get();
             tail_->chain(std::move(next));
-            tail_ = next.get();
+            tail_ = new_tail;
             return std::move(*this);
+        }
+        
+        auto operator()() -> void;
+        auto operator()(task_runner<void> & runner) -> void;
+    };
+
+    template<class ReturnType>
+    class task_runner
+    {
+    public:
+        auto run(task_work<ReturnType> * work) -> ReturnType
+        {
+            task_context<ReturnType> ctx{};
+
+            while (work)
+            {
+                if constexpr (std::is_same_v<ReturnType, void>)
+                {
+                    work->execute(ctx);
+                }
+                else
+                {
+                    auto res = work->execute(ctx);
+                    ctx.set_result(std::move(res));
+                }
+                work = work->next();
+            }
+
+            if constexpr (not std::is_same_v<ReturnType, void>)
+            {
+                return std::move(ctx.release_result());
+            }
         }
     };
 
+    template<class ReturnType>
+    inline auto task<ReturnType>::operator()() -> ReturnType
+    {
+        static task_runner<ReturnType> runner{};
+        return (*this)(runner);
+    }
+
+    template<class ReturnType>
+    inline auto task<ReturnType>::operator()(task_runner<ReturnType> & runner) -> ReturnType
+    {
+        return runner.run(work_.get());
+    }
+
+    inline auto task<void>::operator()() -> void
+    {
+        static task_runner<void> runner{};
+        (*this)(runner);
+    }
+
+    inline auto task<void>::operator()(task_runner<void> & runner) -> void
+    {
+        runner.run(work_.get());
+    }
+    
     template<class ReturnType>
     inline auto make_task(std::function<ReturnType()> && f) -> task<ReturnType>
     {
