@@ -117,7 +117,7 @@ TXL_UNIT_TEST(ring_buffer_file)
         }
     }
     {
-        txl::ring_buffer<int> rb(100, txl::ring_buffer_flags::none, storage.fd());
+        txl::ring_buffer<int> rb(100, txl::ring_buffer_flags::no_initialize, storage.fd());
         assert_equal(51, *rb.read());
     }
 }

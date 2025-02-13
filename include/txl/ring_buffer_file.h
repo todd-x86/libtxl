@@ -63,9 +63,9 @@ namespace txl
         struct file_cursor_data final
         {
             cursor_data head_;
-            char pad1_[std::hardware_constructive_interference_size];
+            char pad1_[64]; //std::hardware_constructive_interference_size];
             cursor_data tail_;
-            char pad2_[std::hardware_constructive_interference_size];
+            char pad2_[64]; //std::hardware_constructive_interference_size];
         };
     private:
         struct entry_data final

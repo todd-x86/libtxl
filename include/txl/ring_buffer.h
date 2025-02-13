@@ -13,6 +13,7 @@ namespace txl
     {
         none = 0,
         preserve_values = 1,
+        no_initialize = 1 << 1,
     };
 
     inline auto operator|(ring_buffer_flags x, ring_buffer_flags y) -> ring_buffer_flags
@@ -67,6 +68,11 @@ namespace txl
         {
             return (flags_ & ring_buffer_flags::preserve_values) != ring_buffer_flags::preserve_values;
         }
+        
+        auto is_no_initialize() const -> bool
+        {
+            return (flags_ & ring_buffer_flags::no_initialize) == ring_buffer_flags::no_initialize;
+        }
     public:
         ring_buffer(size_t capacity, ring_buffer_flags flags = ring_buffer_flags::none, std::optional<int> fd = std::nullopt, std::optional<off_t> offset = std::nullopt)
             : flags_(flags)
@@ -76,13 +82,13 @@ namespace txl
             {
                 mm_flags = mm_flags | memory_map::anonymous;
             }
-            mmap_.open(std::max(static_cast<size_t>(4096), capacity + sizeof(buffer_map)), memory_map::read | memory_map::write, /* shared */ fd.has_value(), mm_flags, nullptr, fd, offset).or_throw();
-            if (not fd.has_value())
+            mmap_.open(std::max(static_cast<size_t>(4096), (sizeof(Value) * capacity) + sizeof(buffer_map)), memory_map::read | memory_map::write, /* shared */ fd.has_value(), mm_flags, nullptr, fd, offset).or_throw();
+            if (not is_no_initialize())
             {
                 head() = 0;
                 tail() = 0;
+                mmap_.memory().to_alias<buffer_map>()->size_ = capacity;
             }
-            mmap_.memory().to_alias<buffer_map>()->size_ = capacity;
         }
 
         ~ring_buffer()

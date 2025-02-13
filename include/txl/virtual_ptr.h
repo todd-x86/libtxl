@@ -10,7 +10,16 @@ namespace txl
     namespace detail
     {
         template<class T>
-        struct virtual_holder
+        struct holder_base
+        {
+            virtual ~holder_base() = default;
+
+            virtual auto ptr() -> T * = 0;
+            virtual auto copy() -> holder_base<T> * = 0;
+        };
+
+        template<class T>
+        struct virtual_holder final : holder_base<T>
         {
             T * pointer_;
 
@@ -21,34 +30,36 @@ namespace txl
 
             virtual ~virtual_holder() = default;
 
-            virtual auto copy() -> virtual_holder<T> *
+            auto ptr() -> T * override
             {
-                return new virtual_holder<T>{pointer_};
+                return pointer_;
             }
 
-            virtual auto free() -> void
+            auto copy() -> virtual_holder<T> * override
             {
-                delete this;
+                return new virtual_holder<T>{pointer_};
             }
         };
 
         template<class T>
-        struct heap_holder : virtual_holder<T>
+        struct heap_holder final : holder_base<T>
         {
-            using virtual_holder<T>::virtual_holder;
+            T data_;
+
+            template<class... Args>
+            heap_holder(Args && ... args)
+                : data_(std::forward<Args>(args)...)
+            {
+            }
+            
+            auto ptr() -> T * override
+            {
+                return &data_;
+            }
             
             auto copy() -> heap_holder<T> * override
             {
                 throw std::runtime_error{"cannot copy a heap-backed virtual_ptr"};
-            }
-
-            auto free() -> void override
-            {
-                auto p = this->pointer_;
-                this->pointer_ = nullptr;
-                delete p;
-                
-                delete this;
             }
         };
     }
@@ -57,7 +68,7 @@ namespace txl
     class virtual_ptr
     {
     protected:
-        detail::virtual_holder<T> * data_ = nullptr;
+        detail::holder_base<T> * data_ = nullptr;
     public:
         virtual_ptr() = default;
         
@@ -97,7 +108,7 @@ namespace txl
             data_ = nullptr;
             if (data)
             {
-                data->free();
+                delete data;
             }
         }
         
@@ -125,7 +136,7 @@ namespace txl
             {
                 if (data_)
                 {
-                    data_->free();
+                    delete data_;
                     data_ = nullptr;
                 }
                 std::swap(data_, p.data_);
@@ -159,10 +170,12 @@ namespace txl
     struct heap_ptr : virtual_ptr<T>
     {
         heap_ptr() = default;
-        heap_ptr(T * value)
+
+        template<class... Args>
+        heap_ptr(Args && ... args)
             : virtual_ptr<T>()
         {
-            this->data_ = new detail::heap_holder<T>{value};
+            this->data_ = new detail::heap_holder<T>{std::forward<Args>(args)...};
         }
         heap_ptr(heap_ptr const &) = delete;
         heap_ptr(heap_ptr &&) = default;
@@ -174,6 +187,6 @@ namespace txl
     template<class T, class... Args>
     inline auto make_heap_ptr(Args && ... args) -> heap_ptr<T>
     {
-        return heap_ptr<T>{new T{std::forward<Args>(args)...}};
+        return heap_ptr<T>{std::forward<Args>(args)...};
     }
 }
