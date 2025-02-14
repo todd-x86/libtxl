@@ -1,8 +1,10 @@
 #pragma once
 
+#include <chrono>
 #include <functional>
 #include <memory>
 #include <optional>
+#include <thread>
 
 namespace txl
 {
@@ -87,6 +89,18 @@ namespace txl
         {
             return next_.get();
         }
+
+        auto tail() -> task_work *
+        {
+            auto next = this;
+            auto prev = next;
+            while (next)
+            {
+                prev = next;
+                next = next->next_.get();
+            }
+            return prev;
+        }
     };
 
     template<class ReturnType>
@@ -129,6 +143,14 @@ namespace txl
                 std::swap(tail_, t.tail_);
             }
             return *this;
+        }
+        
+        auto then(task<ReturnType> && t) -> task<ReturnType> &&
+        {
+            auto new_tail = t.work_->tail();
+            tail_->chain(std::move(t.work_));
+            tail_ = new_tail;
+            return std::move(*this);
         }
 
         auto then(std::function<ReturnType()> && f) -> task<ReturnType> &&
@@ -192,6 +214,16 @@ namespace txl
             return *this;
         }
 
+        // TODO: consolidate task<T> and task<void>
+        
+        auto then(task<void> && t) -> task<void> &&
+        {
+            auto new_tail = t.work_->tail();
+            tail_->chain(std::move(t.work_));
+            tail_ = new_tail;
+            return std::move(*this);
+        }
+
         auto then(std::function<void()> && f) -> task<void> &&
         {
             auto next = std::make_unique<task_work<void>>(std::move(f));
@@ -241,6 +273,14 @@ namespace txl
                 return std::move(ctx.release_result());
             }
         }
+
+        template<class Rep, class Period>
+        auto delay(std::chrono::duration<Rep, Period> const & timeout) -> task<void>
+        {
+            return {[timeout]() {
+                std::this_thread::sleep_for(timeout);
+            }};
+        }
     };
 
     template<class ReturnType>
@@ -266,7 +306,15 @@ namespace txl
     {
         runner.run(work_.get());
     }
-    
+
+    template<class Rep, class Period>
+    inline auto delay(std::chrono::duration<Rep, Period> const & sleep) -> task<void>
+    {
+        // TODO: consolidate static instances
+        static task_runner<void> runner{};
+        return runner.delay(sleep);
+    }
+
     template<class ReturnType>
     inline auto make_task(std::function<ReturnType()> && f) -> task<ReturnType>
     {

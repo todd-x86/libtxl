@@ -105,13 +105,48 @@ TXL_UNIT_TEST(reusable)
 TXL_UNIT_TEST(sleep)
 {
     auto before = std::chrono::steady_clock::time_point{};
+    auto after = std::chrono::steady_clock::time_point{};
+
     auto sleep_then_work = txl::task<void>([&before]() {
         before = std::chrono::steady_clock::now();
     })
-    .then(txl::tasks::sleep(std::chrono::milliseconds(1))
+    .then(txl::delay(std::chrono::milliseconds(1)))
     .then([&after]() {
         after = std::chrono::steady_clock::now();
     });
+
+    sleep_then_work();
+
+    assert_true(std::chrono::duration_cast<std::chrono::milliseconds>(after - before).count() >= 1);
+}
+
+TXL_UNIT_TEST(in_order)
+{
+    std::vector<std::string> secret_message{};
+
+    auto chain1 = txl::make_task([&secret_message]() {
+        secret_message.emplace_back("Be");
+    }).then([&]() {
+        secret_message.emplace_back("sure");
+    });
+    
+    auto chain2 = txl::make_task([&secret_message]() {
+        secret_message.emplace_back("your");
+    }).then([&]() {
+        secret_message.emplace_back("Ovaltine!");
+    });
+    
+    auto chain3 = txl::make_task([&secret_message]() {
+        secret_message.emplace_back("to");
+    }).then([&]() {
+        secret_message.emplace_back("drink");
+    });
+
+    chain1.then(std::move(chain3)).then(std::move(chain2));
+
+    assert_equal(secret_message, std::vector<std::string>{});
+    chain1();
+    assert_equal(secret_message, std::vector<std::string>{"Be","sure","to","drink","your","Ovaltine!"});
 }
 
 TXL_RUN_TESTS()
