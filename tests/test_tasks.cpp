@@ -144,9 +144,44 @@ TXL_UNIT_TEST(in_order)
 
     chain1.then(std::move(chain3)).then(std::move(chain2));
 
+    
     assert_equal(secret_message, std::vector<std::string>{});
+    
     chain1();
+    
     assert_equal(secret_message, std::vector<std::string>{"Be","sure","to","drink","your","Ovaltine!"});
+}
+
+TXL_UNIT_TEST(then_after_nothing)
+{
+    auto called = false;
+    txl::task<void> nothing{};
+
+    nothing.then([&]() {
+        called = true;
+    });
+
+    nothing();
+    assert_true(called);
+}
+
+TXL_UNIT_TEST(something_then_nothing)
+{
+    auto called = false;
+    auto num_calls = 0;
+    txl::task<void> nothing{};
+    txl::task<void> something([&]() {
+        called = true;
+        ++num_calls;
+    });
+    txl::task<void> something_again([&]() {
+        ++num_calls;
+    });
+    something.then(std::move(nothing)).then(std::move(something_again));
+
+    something();
+    assert_true(called);
+    assert_equal(num_calls, 2);
 }
 
 TXL_RUN_TESTS()

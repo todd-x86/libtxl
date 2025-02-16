@@ -1,7 +1,9 @@
 #pragma once
 
+#include <cassert>
 #include <chrono>
 #include <functional>
+#include <future>
 #include <memory>
 #include <optional>
 #include <thread>
@@ -60,18 +62,18 @@ namespace txl
     class task_work
     {
     private:
-        std::function<ReturnType(task_context<ReturnType> &)> func_;
+        std::packaged_task<ReturnType(task_context<ReturnType> &)> task_;
         std::unique_ptr<task_work<ReturnType>> next_;
     public:
         task_work(std::function<ReturnType()> && func)
-            : func_([func=std::move(func)](task_context<ReturnType> &) {
+            : task_([func=std::move(func)](task_context<ReturnType> &) {
                 return func();
             })
         {
         }
         
         task_work(std::function<ReturnType(task_context<ReturnType> &)> && func)
-            : func_(std::move(func))
+            : task_(std::move(func))
         {
         }
 
@@ -82,7 +84,9 @@ namespace txl
 
         auto execute(task_context<ReturnType> & ctx) -> ReturnType
         {
-            return func_(ctx);
+            task_.reset();
+            task_(ctx);
+            return task_.get_future().get();
         }
         
         auto next() -> task_work<ReturnType> * 
@@ -130,7 +134,8 @@ namespace txl
         task(task && t)
             : work_(std::move(t.work_))
         {
-            std::swap(tail_, t.tail_);
+            tail_ = work_.get();
+            t.tail_ = nullptr;
         }
 
         auto operator=(task const &) -> task & = delete;
@@ -140,16 +145,32 @@ namespace txl
             if (this != &t)
             {
                 work_ = std::move(t.work_);
-                std::swap(tail_, t.tail_);
+                tail_ = work_.get();
+                t.tail_ = nullptr;
             }
             return *this;
         }
+
+        auto empty() const -> bool { return not static_cast<bool>(work_); }
         
         auto then(task<ReturnType> && t) -> task<ReturnType> &&
         {
-            auto new_tail = t.work_->tail();
-            tail_->chain(std::move(t.work_));
-            tail_ = new_tail;
+            if (this == &t)
+            {
+                return std::move(*this);
+            }
+
+            if (work_)
+            {
+                auto new_tail = t.work_->tail();
+                tail_->chain(std::move(t.work_));
+                tail_ = new_tail;
+            }
+            else
+            {
+                work_ = std::move(t.work_);
+                std::swap(tail_, t.tail_);
+            }
             return std::move(*this);
         }
 
@@ -157,7 +178,14 @@ namespace txl
         {
             auto next = std::make_unique<task_work<ReturnType>>(std::move(f));
             auto new_tail = next.get();
-            tail_->chain(std::move(next));
+            if (tail_)
+            {
+                tail_->chain(std::move(next));
+            }
+            else
+            {
+                work_ = std::move(next);
+            }
             tail_ = new_tail;
             return std::move(*this);
         }
@@ -166,7 +194,14 @@ namespace txl
         {
             auto next = std::make_unique<task_work<ReturnType>>(std::move(f));
             auto new_tail = next.get();
-            tail_->chain(std::move(next));
+            if (tail_)
+            {
+                tail_->chain(std::move(next));
+            }
+            else
+            {
+                work_ = std::move(next);
+            }
             tail_ = new_tail;
             return std::move(*this);
         }
@@ -206,7 +241,7 @@ namespace txl
 
         auto operator=(task && t) -> task &
         {
-            if (this != &t)
+            if (this != &t and not t.empty())
             {
                 work_ = std::move(t.work_);
                 std::swap(tail_, t.tail_);
@@ -216,11 +251,27 @@ namespace txl
 
         // TODO: consolidate task<T> and task<void>
         
+        auto empty() const -> bool { return not static_cast<bool>(work_); }
+        
         auto then(task<void> && t) -> task<void> &&
         {
-            auto new_tail = t.work_->tail();
-            tail_->chain(std::move(t.work_));
-            tail_ = new_tail;
+            if (this == &t or t.empty())
+            {
+                return std::move(*this);
+            }
+
+            if (work_)
+            {
+                auto new_tail = t.work_->tail();
+                tail_->chain(std::move(t.work_));
+                tail_ = new_tail;
+                t.tail_ = nullptr;
+            }
+            else
+            {
+                work_ = std::move(t.work_);
+                std::swap(tail_, t.tail_);
+            }
             return std::move(*this);
         }
 
@@ -228,8 +279,16 @@ namespace txl
         {
             auto next = std::make_unique<task_work<void>>(std::move(f));
             auto new_tail = next.get();
-            tail_->chain(std::move(next));
+            if (work_)
+            {
+                tail_->chain(std::move(next));
+            }
+            else
+            {
+                work_ = std::move(next);
+            }
             tail_ = new_tail;
+            assert(tail_);
             return std::move(*this);
         }
 
@@ -237,7 +296,14 @@ namespace txl
         {
             auto next = std::make_unique<task_work<void>>(std::move(f));
             auto new_tail = next.get();
-            tail_->chain(std::move(next));
+            if (work_)
+            {
+                tail_->chain(std::move(next));
+            }
+            else
+            {
+                work_ = std::move(next);
+            }
             tail_ = new_tail;
             return std::move(*this);
         }
