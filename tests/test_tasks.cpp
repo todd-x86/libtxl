@@ -130,6 +130,10 @@ TXL_UNIT_TEST(in_order)
         secret_message.emplace_back("sure");
     });
     
+    chain1();
+    assert_equal(secret_message, std::vector<std::string>{"Be","sure"});
+    secret_message.clear();
+    
     auto chain2 = txl::make_task([&secret_message]() {
         secret_message.emplace_back("your");
     }).then([&]() {

@@ -105,6 +105,18 @@ namespace txl
             }
             return prev;
         }
+
+        auto count() const -> int
+        {
+            auto count = 0;
+            auto next = this;
+            while (next)
+            {
+                ++count;
+                next = next->next_.get();
+            }
+            return count;
+        }
     };
 
     template<class ReturnType>
@@ -134,7 +146,7 @@ namespace txl
         task(task && t)
             : work_(std::move(t.work_))
         {
-            tail_ = work_.get();
+            tail_ = t.tail_;
             t.tail_ = nullptr;
         }
 
@@ -145,7 +157,7 @@ namespace txl
             if (this != &t)
             {
                 work_ = std::move(t.work_);
-                tail_ = work_.get();
+                tail_ = t.tail_;
                 t.tail_ = nullptr;
             }
             return *this;
@@ -155,7 +167,7 @@ namespace txl
         
         auto then(task<ReturnType> && t) -> task<ReturnType> &&
         {
-            if (this == &t)
+            if (this == &t or t.empty())
             {
                 return std::move(*this);
             }
@@ -163,14 +175,17 @@ namespace txl
             if (work_)
             {
                 auto new_tail = t.work_->tail();
+                assert(tail_ == work_->tail());
                 tail_->chain(std::move(t.work_));
                 tail_ = new_tail;
             }
             else
             {
                 work_ = std::move(t.work_);
-                std::swap(tail_, t.tail_);
+                tail_ = work_.get();
             }
+            assert(tail_ == work_->tail());
+            t.tail_ = nullptr;
             return std::move(*this);
         }
 
@@ -178,7 +193,7 @@ namespace txl
         {
             auto next = std::make_unique<task_work<ReturnType>>(std::move(f));
             auto new_tail = next.get();
-            if (tail_)
+            if (work_)
             {
                 tail_->chain(std::move(next));
             }
@@ -187,6 +202,7 @@ namespace txl
                 work_ = std::move(next);
             }
             tail_ = new_tail;
+            assert(tail_ == work_->tail());
             return std::move(*this);
         }
 
@@ -194,7 +210,7 @@ namespace txl
         {
             auto next = std::make_unique<task_work<ReturnType>>(std::move(f));
             auto new_tail = next.get();
-            if (tail_)
+            if (work_)
             {
                 tail_->chain(std::move(next));
             }
@@ -203,6 +219,7 @@ namespace txl
                 work_ = std::move(next);
             }
             tail_ = new_tail;
+            assert(tail_ == work_->tail());
             return std::move(*this);
         }
         
@@ -210,7 +227,7 @@ namespace txl
         auto operator()(task_runner<ReturnType> & runner) -> ReturnType;
     };
 
-    template<>
+    /*template<>
     class task<void>
     {
     private:
@@ -310,7 +327,7 @@ namespace txl
         
         auto operator()() -> void;
         auto operator()(task_runner<void> & runner) -> void;
-    };
+    };*/
 
     template<class ReturnType>
     class task_runner
@@ -362,7 +379,7 @@ namespace txl
         return runner.run(work_.get());
     }
 
-    inline auto task<void>::operator()() -> void
+    /*inline auto task<void>::operator()() -> void
     {
         static task_runner<void> runner{};
         (*this)(runner);
@@ -371,7 +388,7 @@ namespace txl
     inline auto task<void>::operator()(task_runner<void> & runner) -> void
     {
         runner.run(work_.get());
-    }
+    }*/
 
     template<class Rep, class Period>
     inline auto delay(std::chrono::duration<Rep, Period> const & sleep) -> task<void>

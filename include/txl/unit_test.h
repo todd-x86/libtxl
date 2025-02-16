@@ -6,6 +6,7 @@
 #include <iostream>
 #include <sstream>
 #include <stdexcept>
+#include <vector>
 
 #define _TXL_TEST_NAME(n) __test_##n
 
@@ -41,7 +42,7 @@ namespace txl
         template<class T>
         struct test_printer final
         {
-            T value_;
+            T const & value_;
         };
 
         std::ostringstream error_buf_;
@@ -153,6 +154,24 @@ namespace txl
 
         template<class S, class T>
         inline constexpr bool is_streamable_v = is_streamable<S, T>{}.value;
+    }
+    
+    template<class T>
+    inline auto operator<<(std::ostream & os, unit_test::test_printer<std::vector<T>> const & value) -> std::ostream &
+    {
+        os << "{";
+        auto comma = false;
+        for (auto const & item : value.value_)
+        {
+            if (comma)
+            {
+                os << ", ";
+            }
+            os << unit_test::test_printer<T>(item);
+            comma = true;
+        }
+        os << "}";
+        return os;
     }
 
     template<class T>
