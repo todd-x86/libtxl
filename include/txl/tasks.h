@@ -1,10 +1,16 @@
 #pragma once
 
+#include <txl/on_exit.h>
+
+#include <atomic>
 #include <cassert>
 #include <chrono>
+#include <condition_variable>
 #include <functional>
 #include <future>
+#include <list>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <thread>
 
@@ -12,6 +18,28 @@ namespace txl
 {
     template<class ReturnType>
     class task_context;
+
+    struct future_base
+    {
+        virtual auto wait() -> void = 0;
+    };
+
+    template<class ReturnType>
+    class future : public future_base
+    {
+    private:
+        std::future<ReturnType> fut_;
+    public:
+        future(std::future<ReturnType> fut)
+            : fut_(std::move(fut))
+        {
+        }
+
+        auto wait() -> void override
+        {
+            fut_.wait();
+        }
+    };
 
     namespace detail
     {
@@ -30,7 +58,43 @@ namespace txl
                 return success_;
             }
         };
+    }  
+
+    template<class ReturnType>
+    class task_context : public detail::task_context_base
+    {
+    private:
+        std::optional<ReturnType> ret_;
+    public:
+        auto set_result(ReturnType && value) -> void
+        {
+            ret_ = std::make_optional(std::move(value));
+        }
         
+        auto result() const -> ReturnType const &
+        {
+            return *ret_;
+        }
+
+        auto result() -> ReturnType &
+        {
+            return *ret_;
+        }
+
+        auto release_result() -> ReturnType &&
+        {
+            return std::move(*ret_);
+        }
+    };
+    
+    template<>
+    struct task_context<void> : detail::task_context_base
+    {
+    };
+
+
+    namespace detail
+    {
         template<class ReturnType>
         class task_work
         {
@@ -48,6 +112,24 @@ namespace txl
             task_work(std::function<ReturnType(task_context<ReturnType> &)> && func)
                 : task_(std::move(func))
             {
+            }
+
+            task_work(std::promise<void> && p)
+                : task_([p=std::move(p)](task_context<ReturnType> & ctx) mutable {
+                    auto _ = txl::on_exit([&]() {
+                        p.set_value();
+                    });
+                    if constexpr (not std::is_void_v<ReturnType>)
+                    {
+                        return ctx.release_result();
+                    }
+                })
+            {
+            }
+
+            auto get_completion_future() -> std::unique_ptr<future_base>
+            {
+                return std::make_unique<future<ReturnType>>(std::future<ReturnType>{task_.get_future()});
             }
 
             auto wait() -> void
@@ -97,47 +179,17 @@ namespace txl
             }
         };
     }
-
-    template<class ReturnType>
-    class task_context : public detail::task_context_base
-    {
-    private:
-        std::optional<ReturnType> ret_;
-    public:
-        auto set_result(ReturnType && value) -> void
-        {
-            ret_ = std::make_optional(std::move(value));
-        }
-        
-        auto result() const -> ReturnType const &
-        {
-            return *ret_;
-        }
-
-        auto result() -> ReturnType &
-        {
-            return *ret_;
-        }
-
-        auto release_result() -> ReturnType &&
-        {
-            return std::move(*ret_);
-        }
-    };
     
-    template<>
-    struct task_context<void> : detail::task_context_base
-    {
-    };
+    template<class ReturnType>
+    class task;
 
     struct closure
     {
         virtual auto execute() -> void = 0;
         virtual auto next() -> bool = 0;
+        virtual auto copy() -> std::unique_ptr<closure> = 0;
+        virtual auto get_completion_task() -> task<void> = 0;
     };
-
-    template<class ReturnType>
-    class task;
 
     class task_runner
     {
@@ -164,10 +216,12 @@ namespace txl
     private:
         std::unique_ptr<detail::task_work<ReturnType>> work_;
         detail::task_work<ReturnType> * tail_ = nullptr;
-        
+        std::unique_ptr<future_base> future_;
+
         task(std::unique_ptr<detail::task_work<ReturnType>> && w)
             : work_(std::move(w))
             , tail_(work_.get())
+            , future_(work_->get_completion_future())
         {
         }
 
@@ -183,6 +237,7 @@ namespace txl
                 work_ = std::move(next);
             }
             tail_ = new_tail;
+            future_ = tail_->get_completion_future();
             assert(tail_ == work_->tail());
         }
 
@@ -198,9 +253,16 @@ namespace txl
                 work_ = std::move(next);
             }
             tail_ = new_tail;
+            future_ = tail_->get_completion_future();
         }
     public:
         task() = default;
+        
+        task(std::unique_ptr<future_base> && fut)
+            : future_(std::move(fut))
+        {
+        }
+        
         task(std::function<ReturnType()> && f)
             : task(std::make_unique<detail::task_work<ReturnType>>(std::move(f)))
         {
@@ -212,6 +274,7 @@ namespace txl
             : work_(std::move(t.work_))
         {
             tail_ = t.tail_;
+            future_ = std::move(t.future_);
             t.tail_ = nullptr;
         }
 
@@ -222,19 +285,22 @@ namespace txl
             if (this != &t)
             {
                 work_ = std::move(t.work_);
+                future_ = std::move(t.future_);
                 tail_ = t.tail_;
                 t.tail_ = nullptr;
             }
             return *this;
         }
 
-        auto empty() const -> bool { return not static_cast<bool>(work_); }
+        auto empty() const -> bool { return not static_cast<bool>(future_); }
 
         auto wait() -> void
         {
-            if (work_)
+            if (future_)
             {
-                work_->wait();
+                assert(work_);
+                assert(tail_);
+                future_->wait();
             }
         }
         
@@ -305,17 +371,34 @@ namespace txl
             work_ = work_->next();
             return work_ != nullptr;
         }
+
+        auto copy() -> std::unique_ptr<closure> override
+        {
+            return std::make_unique<task_work_closure>(*work_, ctx_);
+        }
+        
+        auto get_completion_task() -> task<void> override
+        {
+            if (work_)
+            {
+                std::promise<void> completion{};
+                auto fut = completion.get_future();
+                if constexpr (std::is_void_v<ReturnType>)
+                {
+                    work_->chain(std::make_unique<detail::task_work<void>>(std::move(completion)));
+                }
+                else
+                {
+                    work_->chain(std::make_unique<detail::task_work<ReturnType>>(std::move(completion)));
+                }
+                return {std::make_unique<future<void>>(std::move(fut))};
+            }
+            return {};
+        }
     };
 
-    class inline_task_runner : public task_runner
+    struct inline_task_runner : task_runner
     {
-    public:
-        inline_task_runner()
-            : task_runner()
-        {
-            // Mark it completed since we run inline
-        }
-
         auto run(closure & c) -> task<void> override
         {
             do
@@ -337,16 +420,162 @@ namespace txl
 
     std::unique_ptr<task_runner> task_runner::global_{std::make_unique<inline_task_runner>()};
 
-
-    /*struct thread_pool_task_runner : task_runner
+    class thread_pool_worker
     {
-        auto run(closure & c) -> std::future<void> override
+    private:
+        struct pending_waiter final
         {
-            do
+            std::condition_variable cond_;
+            std::mutex mut_;
+        };
+        std::thread thread_;
+        std::list<std::unique_ptr<closure>> pending_;
+        std::unique_ptr<pending_waiter> pending_waiter_;
+        std::atomic_bool stopped_;
+
+        auto thread_body() -> void
+        {
+            while (not stopped_.load(std::memory_order_relaxed))
             {
-                c.execute();
+                auto work = get_work();
+                if (work)
+                {
+                    do
+                    {
+                        work->execute();
+                    }
+                    while (not stopped_.load(std::memory_order_relaxed) and work->next());
+                }
             }
-            while (c.next());
+        }
+
+        auto get_work() -> std::unique_ptr<closure>
+        {
+            while (not stopped_.load(std::memory_order_relaxed) and pending_.empty())
+            {
+                auto lock = std::unique_lock<std::mutex>{pending_waiter_->mut_};
+                pending_waiter_->cond_.wait(lock, [this]() {
+                    return not pending_.empty();
+                });
+            }
+            if (stopped_.load(std::memory_order_relaxed) or pending_.empty())
+            {
+                return {};
+            }
+
+            auto w = std::move(pending_.front());
+            pending_.pop_front();
+            return {std::move(w)};
+        }
+    public:
+        thread_pool_worker() = default;
+
+        thread_pool_worker(thread_pool_worker && w)
+            : thread_(std::move(w.thread_))
+            , pending_(std::move(w.pending_))
+            , pending_waiter_(std::move(w.pending_waiter_))
+            , stopped_()
+        {
+            auto old_value = stopped_.load();
+            stopped_.store(w.stopped_.load());
+            w.stopped_.store(old_value);
+        }
+
+        auto post(std::unique_ptr<closure> && c) -> task<void>
+        {
+            task<void> completion_task = c->get_completion_task();
+            pending_.emplace_back(std::move(c));
+            pending_waiter_->cond_.notify_one();
+            return completion_task;
+        }
+
+        auto is_running() const -> bool
+        {
+            return not stopped_.load(std::memory_order_relaxed);
+        }
+
+        auto start() -> void
+        {
+            stopped_.store(false, std::memory_order_seq_cst);
+
+            thread_ = std::thread([&]() {
+                thread_body();
+            });
+        }
+
+        auto stop() -> void
+        {
+            stopped_.store(true, std::memory_order_seq_cst);
+            pending_waiter_->cond_.notify_all();
+        }
+
+        auto wait_for_shutdown() -> void
+        {
+            thread_.join();
+        }
+    };
+
+    class thread_pool
+    {
+    private:
+        std::vector<thread_pool_worker> workers_{};
+        std::atomic<size_t> next_thread_index_ = 0;
+    public:
+        thread_pool(size_t num_threads)
+        {
+            workers_.resize(num_threads);
+        }
+
+        auto post_work(std::unique_ptr<closure> && c) -> task<void>
+        {
+            auto index = next_thread_index_.fetch_add(1);
+            if (index == workers_.size())
+            {
+                next_thread_index_.store(0, std::memory_order_seq_cst);
+            }
+            return workers_[index].post(std::move(c));
+        }
+
+        auto start_workers() -> void
+        {
+            for (auto & w : workers_)
+            {
+                w.start();
+            }
+        }
+
+        auto stop_workers() -> void
+        {
+            for (auto & w : workers_)
+            {
+                w.stop();
+            }
+            for (auto & w : workers_)
+            {
+                w.wait_for_shutdown();
+            }
+        }
+    };
+
+    struct thread_pool_task_runner : task_runner
+    {
+    private:
+        thread_pool pool_;
+    public:
+        thread_pool_task_runner(size_t num_threads)
+            : pool_{num_threads}
+        {
+            pool_.start_workers();
+        }
+
+        ~thread_pool_task_runner()
+        {
+            pool_.stop_workers();
+        }
+
+        auto run(closure & c) -> task<void> override
+        {
+            return pool_.post_work(c.copy());
         }
 
         auto delay(int64_t timeout_nanos) -> task<void> override
@@ -355,7 +584,7 @@ namespace txl
                 std::this_thread::sleep_for(std::chrono::nanoseconds{timeout_nanos});
             }};
         }
-    };*/
+    };
 
     template<class ReturnType>
     inline auto task<ReturnType>::operator()(task_runner & runner) -> ReturnType
