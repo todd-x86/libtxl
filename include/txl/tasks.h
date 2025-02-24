@@ -198,8 +198,7 @@ namespace txl
     template<class ReturnType>
     struct task_function
     {
-        virtual auto set_context(task_context<ReturnType> & ctx) -> void = 0;
-        virtual auto execute() -> void = 0;
+        virtual auto execute(task_context<ReturnType> & ctx) -> void = 0;
     };
 
     template<class ReturnType, class Func>
@@ -207,27 +206,21 @@ namespace txl
     {
     private:
         Func func_;
-        task_context<ReturnType> * ctx_;
     public:
         task_lambda_function(Func && f)
             : func_(std::move(f))
         {
         }
 
-        auto set_context(task_context<ReturnType> & ctx) -> void
-        {
-            ctx_ = &ctx;
-        }
-
-        auto execute() -> void override
+        auto execute(task_context<ReturnType> & ctx) -> void override
         {
             if constexpr (std::is_void_v<ReturnType>)
             {
-                func_(*ctx_);
+                func_(ctx);
             }
             else
             {
-                ctx_->set_result(func_(*ctx_));
+                ctx.set_result(func_(ctx));
             }
         }
     };
@@ -256,7 +249,7 @@ namespace txl
             {
                 work_ = std::make_unique<task_lambda_function<ReturnType, decltype(f)>>(std::move(f));
             }
-            else if constexpr (std::is_invocable_v<Func>)
+            else //if constexpr (std::is_invocable_v<Func>)
             {
                 if constexpr (std::is_void_v<ReturnType>)
                 {
@@ -295,16 +288,14 @@ namespace txl
 
             if constexpr (std::is_void_v<ReturnType>)
             {
-                work_->set_context(ctx);
-                work_->execute();
+                work_->execute(ctx);
                 prom_.set_value();
             }
             else
             {
-                work_->set_context(ctx);
-                work_->execute();
+                work_->execute(ctx);
                 // TODO: fixme
-                prom_.set_value(ctx.release_result());
+                //prom_.set_value(ctx.release_result());
             }
         }
 
@@ -332,7 +323,7 @@ namespace txl
 
         auto empty() const -> bool
         {
-            return static_cast<bool>(work_);
+            return not static_cast<bool>(work_);
         }
 
         auto next() -> task_chain *
