@@ -7,7 +7,7 @@ TXL_UNIT_TEST(simple)
 {
     auto num_calls = 0;
     auto ss = std::ostringstream{};
-    auto workflow = txl::make_task([&]() {
+    auto workflow = txl::make_task<void>([&]() {
         ++num_calls;
         ss << "Hello ";
     }).then([&]() {
@@ -26,7 +26,7 @@ TXL_UNIT_TEST(simple_with_context)
     auto num_calls = 0;
     auto num_continuations = 0;
     auto ss = std::ostringstream{};
-    auto workflow = txl::make_task([&]() {
+    auto workflow = txl::make_task<void>([&]() {
         ++num_calls;
         ss << "Hello ";
     }).then([&](auto & context) {
@@ -91,7 +91,7 @@ TXL_UNIT_TEST(counting)
 TXL_UNIT_TEST(reusable)
 {
     int num_calls = 0;
-    auto unit_of_work = txl::make_task([&num_calls]() {
+    auto unit_of_work = txl::make_task<void>([&num_calls]() {
         ++num_calls;
     });
 
@@ -124,7 +124,7 @@ TXL_UNIT_TEST(in_order)
 {
     std::vector<std::string> secret_message{};
 
-    auto chain1 = txl::make_task([&secret_message]() {
+    auto chain1 = txl::make_task<void>([&secret_message]() {
         secret_message.emplace_back("Be");
     }).then([&]() {
         secret_message.emplace_back("sure");
@@ -134,13 +134,13 @@ TXL_UNIT_TEST(in_order)
     assert_equal(secret_message, std::vector<std::string>{"Be","sure"});
     secret_message.clear();
     
-    auto chain2 = txl::make_task([&secret_message]() {
+    auto chain2 = txl::make_task<void>([&secret_message]() {
         secret_message.emplace_back("your");
     }).then([&]() {
         secret_message.emplace_back("Ovaltine!");
     });
     
-    auto chain3 = txl::make_task([&secret_message]() {
+    auto chain3 = txl::make_task<void>([&secret_message]() {
         secret_message.emplace_back("to");
     }).then([&]() {
         secret_message.emplace_back("drink");
