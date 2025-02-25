@@ -44,6 +44,11 @@ namespace txl
         {
         }
 
+        auto assign(awaiter & a) -> void
+        {
+            core_ = a.core_;
+        }
+
         auto notify_all() -> void
         {
             core_->notify_all();
@@ -106,6 +111,17 @@ namespace txl
             return {awaiter_};
         }
 
+        auto move_from(promise<ReturnType> & p) -> void
+        {
+            value_ = std::move(p.value_);
+            p.awaiter_.assign(awaiter_);
+        }
+
+        auto get_value() const -> ReturnType const &
+        {
+            return *value_;
+        }
+
         auto has_value() const -> bool { return value_.has_value(); }
         
         auto set_value(ReturnType && val) -> void
@@ -163,24 +179,27 @@ namespace txl
     class task_context
     {
     private:
-        std::optional<ReturnType> value_;
-        bool success_ = true;
+        promise<ReturnType> * prom_ = nullptr;
+        bool success_ = false;
     public:
+        task_context() = default;
+
+        task_context(promise<ReturnType> & prom)
+            : prom_(&prom)
+            , success_(true)
+        {
+        }
+
         auto is_success() const -> bool { return success_; }
 
         auto result() const -> ReturnType const &
         {
-            return *value_;
-        }
-
-        auto release_result() -> ReturnType &&
-        {
-            return std::move(*value_);
+            return prom_->get_value();
         }
 
         auto set_result(ReturnType && v) -> void
         {
-            value_ = std::move(v);
+            prom_->set_value(std::move(v));
         }
     };
 
@@ -188,9 +207,16 @@ namespace txl
     class task_context<void>
     {
     private:
-        bool success_ = true;
+        promise<void> * prom_ = nullptr;
+        bool success_ = false;
     public:
         task_context() = default;
+
+        task_context(promise<void> & prom)
+            : prom_(&prom)
+            , success_(true)
+        {
+        }
 
         auto is_success() const -> bool { return success_; }
     };
@@ -253,14 +279,14 @@ namespace txl
             {
                 if constexpr (std::is_void_v<ReturnType>)
                 {
-                    auto wrapper = [func=std::move(f)](task_context<ReturnType> &) {
+                    auto wrapper = [func=std::move(f)](task_context<ReturnType> &) mutable {
                         func();
                     };
                     work_ = std::make_unique<task_lambda_function<ReturnType, decltype(wrapper)>>(std::move(wrapper));
                 }
                 else
                 {
-                    auto wrapper = [func=std::move(f)](task_context<ReturnType> &) {
+                    auto wrapper = [func=std::move(f)](task_context<ReturnType> &) mutable {
                         return func();
                     };
                     work_ = std::make_unique<task_lambda_function<ReturnType, decltype(wrapper)>>(std::move(wrapper));
@@ -289,14 +315,18 @@ namespace txl
             if constexpr (std::is_void_v<ReturnType>)
             {
                 work_->execute(ctx);
+                // TODO: move to task_context
                 prom_.set_value();
             }
             else
             {
                 work_->execute(ctx);
-                // TODO: fixme
-                //prom_.set_value(ctx.release_result());
             }
+        }
+
+        auto get_promise() -> promise<ReturnType> &
+        {
+            return prom_;
         }
 
         auto wait() -> void
@@ -335,9 +365,9 @@ namespace txl
     class task_runner;
 
     template<class ReturnType>
-    class task
+    class task_core
     {
-    private:
+    protected:
         task_chain<ReturnType> chain_;
 
         auto assign(task_chain<ReturnType> && tc) -> void
@@ -350,24 +380,24 @@ namespace txl
             chain_.chain(std::make_unique<task_chain<ReturnType>>(std::move(tc)));
         }
     public:
-        task() = default;
+        task_core() = default;
         
         template<class Func>
-        task(Func && f)
+        task_core(Func && f)
             : chain_(std::move(f))
         {
         }
 
-        task(task const &) = delete;
+        task_core(task_core const &) = delete;
 
-        task(task && t)
+        task_core(task_core && t)
             : chain_(std::move(t.chain_))
         {
         }
 
-        auto operator=(task const &) -> task & = delete;
+        auto operator=(task_core const &) -> task_core & = delete;
 
-        auto operator=(task && t) -> task &
+        auto operator=(task_core && t) -> task_core &
         {
             if (this != &t)
             {
@@ -386,7 +416,7 @@ namespace txl
             chain_.wait();
         }
         
-        auto then(task<ReturnType> && t) -> task<ReturnType> &&
+        auto then(task_core && t) -> void
         {
             if (chain_.empty())
             {
@@ -396,12 +426,10 @@ namespace txl
             {
                 append(std::move(t.chain_));
             }
-
-            return std::move(*this);
         }
 
         template<class Func>
-        auto then(Func && f) -> task<ReturnType> &&
+        auto then(Func && f) -> void
         {
             if (chain_.empty())
             {
@@ -411,11 +439,53 @@ namespace txl
             {
                 append(task_chain<ReturnType>{std::move(f)});
             }
+        }
+    };
+
+    template<class ReturnType>
+    struct task : task_core<ReturnType>
+    {
+        using task_core<ReturnType>::task_core;
+        
+        auto then(task && t) -> task &&
+        {
+            task_core<ReturnType>::then(std::move(t));
             return std::move(*this);
         }
 
-        auto operator()() -> ReturnType;
-        auto operator()(task_runner & runner) -> ReturnType;
+        template<class Func>
+        auto then(Func && f) -> task &&
+        {
+            task_core<ReturnType>::then(std::move(f));
+            return std::move(*this);
+        }
+
+        auto operator()() -> ReturnType const &;
+
+        auto operator()(task_runner & runner) -> ReturnType const &;
+    };
+    
+    template<>
+    struct task<void> : task_core<void>
+    {
+        using task_core<void>::task_core;
+        
+        auto then(task && t) -> task &&
+        {
+            task_core<void>::then(std::move(t));
+            return std::move(*this);
+        }
+
+        template<class Func>
+        auto then(Func && f) -> task &&
+        {
+            task_core<void>::then(std::move(f));
+            return std::move(*this);
+        }
+        
+        auto operator()() -> void;
+
+        auto operator()(task_runner & runner) -> void;
     };
 
     struct closure
@@ -474,24 +544,48 @@ namespace txl
     std::unique_ptr<task_runner> task_runner::global_(std::make_unique<inline_task_runner>());
     
     template<class ReturnType>
-    auto task<ReturnType>::operator()() -> ReturnType
+    auto task<ReturnType>::operator()() -> ReturnType const &
     {
         return (*this)(task_runner::global());
     }
+    
+    auto task<void>::operator()() -> void
+    {
+        (*this)(task_runner::global());
+    }
 
     template<class ReturnType>
-    auto task<ReturnType>::operator()(task_runner & runner) -> ReturnType
+    auto task<ReturnType>::operator()(task_runner & runner) -> ReturnType const &
     {
+        auto p = &this->chain_;
         auto ctx = task_context<ReturnType>{};
-        auto p = &chain_;
+        promise<ReturnType> * last_prom = nullptr;
         while (p)
         {
+            if (last_prom)
+            {
+                p->get_promise().move_from(*last_prom);
+            }
+            last_prom = &p->get_promise();
+            ctx = task_context<ReturnType>{p->get_promise()};
             runner.run(task_closure<ReturnType>{*p, ctx});
             p = p->next();
         }
         if constexpr (not std::is_void_v<ReturnType>)
         {
-            return ctx.release_result();
+            return ctx.result();
+        }
+    }
+    
+    auto task<void>::operator()(task_runner & runner) -> void
+    {
+        auto p = &this->chain_;
+        auto ctx = task_context<void>{};
+        while (p)
+        {
+            ctx = task_context<void>{p->get_promise()};
+            runner.run(task_closure<void>{*p, ctx});
+            p = p->next();
         }
     }
     
