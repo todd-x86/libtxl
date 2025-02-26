@@ -123,6 +123,11 @@ namespace txl
             p.awaiter_.assign(awaiter_);
         }
 
+        auto release_value() -> ReturnType &&
+        {
+            return std::move(*value_);
+        }
+
         auto get_value() const -> ReturnType const &
         {
             return *value_;
@@ -267,11 +272,17 @@ namespace txl
     class task_chain
     {
     private:
+        // TODO: sharing promise when moving task but keeping closures the same?
         promise<ReturnType> prom_;
-        std::unique_ptr<task_function<ReturnType>> work_;
+        std::unique_ptr<task_function<ReturnType>> work_{};
         std::unique_ptr<task_chain> next_{};
     public:
         task_chain() = default;
+
+        task_chain(promise<ReturnType> && p)
+            : prom_(std::move(p))
+        {
+        }
 
         task_chain(task_chain && tc)
             : prom_(std::move(tc.prom_))
@@ -321,6 +332,13 @@ namespace txl
         {
             if (not work_)
             {
+                if constexpr (std::is_void_v<ReturnType>)
+                {
+                    // By nature of a non-returning task, we must acknowledge
+                    // that it can be empty and thus if we execute it we must
+                    // enforce the promise.
+                    prom_.set_value();
+                }
                 return;
             }
 
@@ -393,6 +411,11 @@ namespace txl
         }
     public:
         task_core() = default;
+
+        task_core(promise<ReturnType> && p)
+            : chain_(std::move(p))
+        {
+        }
         
         template<class Func>
         task_core(Func && f)
@@ -420,7 +443,7 @@ namespace txl
         
         auto get_promise() -> promise<ReturnType> &
         {
-            return chain_.get_promise();;
+            return chain_.get_promise();
         }
 
         auto empty() const -> bool
@@ -477,9 +500,9 @@ namespace txl
             return std::move(*this);
         }
 
-        auto operator()() -> ReturnType const &;
+        auto operator()() -> ReturnType &&;
 
-        auto operator()(task_runner & runner) -> ReturnType const &;
+        auto operator()(task_runner & runner) -> ReturnType &&;
     };
     
     template<>
@@ -507,6 +530,7 @@ namespace txl
 
     struct closure
     {
+        virtual auto move() const -> std::unique_ptr<closure> = 0;
         virtual auto execute() -> void = 0;
         virtual auto next() -> bool = 0;
     };
@@ -521,6 +545,14 @@ namespace txl
         task_closure(task_chain<ReturnType> & chain)
             : chain_(&chain)
         {
+        }
+
+        task_closure(task_closure const &) = default;
+        task_closure(task_closure &&) = default;
+        
+        auto move() const -> std::unique_ptr<closure> override
+        {
+            return std::make_unique<task_closure<ReturnType>>(std::move(*this));
         }
 
         auto execute() -> void override
@@ -540,16 +572,11 @@ namespace txl
                 if (chain_)
                 {
                     chain_->get_promise().move_from(prev_promise);
+                    return true;
                 }
-                return chain_ != nullptr;
             }
 
             return false;
-        }
-
-        auto context() const -> task_context<ReturnType> const &
-        {
-            return ctx_;
         }
     };
 
@@ -558,7 +585,7 @@ namespace txl
     private:
         static std::unique_ptr<task_runner> global_;
     public:
-        virtual auto run(closure & c) -> task<void> = 0;
+        virtual auto run(closure && c) -> void = 0;
         virtual auto delay(uint64_t nanos) -> task<void> = 0;
 
         static auto global() -> task_runner &
@@ -569,16 +596,13 @@ namespace txl
 
     struct inline_task_runner : task_runner
     {
-        auto run(closure & c) -> task<void> override
+        auto run(closure && c) -> void override
         {
-            auto completion = task<void>{};
             do
             {
                 c.execute();
             }
             while (c.next());
-            completion.get_promise().set_value();
-            return completion;
         }
 
         auto delay(uint64_t nanos) -> task<void> override
@@ -590,9 +614,173 @@ namespace txl
     };
 
     std::unique_ptr<task_runner> task_runner::global_(std::make_unique<inline_task_runner>());
+
+    class thread_pool_worker
+    {
+    private:
+        struct pending_waiter final
+        {
+            std::condition_variable cond_;
+            std::mutex mut_;
+        };
+        std::thread thread_;
+        std::list<std::unique_ptr<closure>> pending_;
+        std::unique_ptr<pending_waiter> pending_waiter_;
+        std::atomic_bool stopped_;
+
+        auto thread_body() -> void
+        {
+            while (not stopped_.load(std::memory_order_relaxed))
+            {
+                auto work = get_work();
+                if (work)
+                {
+                    do
+                    {
+                        work->execute();
+                    }
+                    while (not stopped_.load(std::memory_order_relaxed) and work->next());
+                }
+            }
+        }
+
+        auto get_work() -> std::unique_ptr<closure>
+        {
+            while (not stopped_.load(std::memory_order_relaxed) and pending_.empty())
+            {
+                auto lock = std::unique_lock<std::mutex>{pending_waiter_->mut_};
+                pending_waiter_->cond_.wait(lock, [this]() {
+                    return not pending_.empty();
+                });
+            }
+            if (stopped_.load(std::memory_order_relaxed) or pending_.empty())
+            {
+                return {};
+            }
+
+            auto w = std::move(pending_.front());
+            pending_.pop_front();
+            return {std::move(w)};
+        }
+    public:
+        thread_pool_worker() = default;
+
+        thread_pool_worker(thread_pool_worker && w)
+            : thread_(std::move(w.thread_))
+            , pending_(std::move(w.pending_))
+            , pending_waiter_(std::move(w.pending_waiter_))
+            , stopped_()
+        {
+            auto old_value = stopped_.load();
+            stopped_.store(w.stopped_.load());
+            w.stopped_.store(old_value);
+        }
+
+        auto post(std::unique_ptr<closure> && c) -> void
+        {
+            pending_.emplace_back(std::move(c));
+            pending_waiter_->cond_.notify_one();
+        }
+
+        auto is_running() const -> bool
+        {
+            return not stopped_.load(std::memory_order_relaxed);
+        }
+
+        auto start() -> void
+        {
+            stopped_.store(false, std::memory_order_seq_cst);
+
+            thread_ = std::thread([&]() {
+                thread_body();
+            });
+        }
+
+        auto stop() -> void
+        {
+            stopped_.store(true, std::memory_order_seq_cst);
+            pending_waiter_->cond_.notify_all();
+        }
+
+        auto wait_for_shutdown() -> void
+        {
+            thread_.join();
+        }
+    };
+
+    class thread_pool
+    {
+    private:
+        std::vector<thread_pool_worker> workers_{};
+        std::atomic<size_t> next_thread_index_ = 0;
+    public:
+        thread_pool(size_t num_threads)
+        {
+            workers_.resize(num_threads);
+        }
+
+        auto post_work(std::unique_ptr<closure> && c) -> void
+        {
+            auto index = next_thread_index_.fetch_add(1);
+            if (index == workers_.size())
+            {
+                next_thread_index_.store(0, std::memory_order_seq_cst);
+            }
+            workers_[index].post(std::move(c));
+        }
+
+        auto start_workers() -> void
+        {
+            for (auto & w : workers_)
+            {
+                w.start();
+            }
+        }
+
+        auto stop_workers() -> void
+        {
+            for (auto & w : workers_)
+            {
+                w.stop();
+            }
+            for (auto & w : workers_)
+            {
+                w.wait_for_shutdown();
+            }
+        }
+    };
+
+    struct thread_pool_task_runner : task_runner
+    {
+    private:
+        thread_pool pool_;
+    public:
+        thread_pool_task_runner(size_t num_threads)
+            : pool_{num_threads}
+        {
+            pool_.start_workers();
+        }
+
+        ~thread_pool_task_runner()
+        {
+            pool_.stop_workers();
+        }
+
+        auto run(closure && c) -> void override
+        {
+            pool_.post_work(c.move());
+        }
+
+        auto delay(uint64_t timeout_nanos) -> task<void> override
+        {
+            return {[timeout_nanos]() {
+                std::this_thread::sleep_for(std::chrono::nanoseconds{timeout_nanos});
+            }};
+        }
+    };
     
     template<class ReturnType>
-    auto task<ReturnType>::operator()() -> ReturnType const &
+    auto task<ReturnType>::operator()() -> ReturnType &&
     {
         return (*this)(task_runner::global());
     }
@@ -603,19 +791,19 @@ namespace txl
     }
 
     template<class ReturnType>
-    auto task<ReturnType>::operator()(task_runner & runner) -> ReturnType const &
+    auto task<ReturnType>::operator()(task_runner & runner) -> ReturnType &&
     {
-        auto closure = task_closure<ReturnType>{this->chain_};
-        auto awaiter = runner.run(closure);
-        awaiter.wait();
-        return closure.context().result();
+        auto * tail = this->chain_.tail();
+        runner.run(task_closure<ReturnType>{this->chain_});
+        tail->get_promise().get_future().wait();
+        return tail->get_promise().release_value();
     }
     
     auto task<void>::operator()(task_runner & runner) -> void
     {
-        auto closure = task_closure<void>{this->chain_};
-        auto awaiter = runner.run(closure);
-        awaiter.wait();
+        auto * tail = this->chain_.tail();
+        runner.run(task_closure<void>{this->chain_});
+        tail->get_promise().get_future().wait();
     }
     
     template<class Rep, class Period>
