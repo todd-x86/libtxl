@@ -24,15 +24,21 @@ namespace txl
         {
             std::condition_variable cond_;
             std::mutex mut_;
+            // TODO: atomic_bool
+            bool set_ = false;
 
             auto wait() -> void
             {
-                auto lock = std::unique_lock<std::mutex>{mut_};
-                cond_.wait(lock);
+                if (not set_)
+                {
+                    auto lock = std::unique_lock<std::mutex>{mut_};
+                    cond_.wait(lock);
+                }
             }
 
             auto notify_all() -> void
             {
+                set_ = true;
                 cond_.notify_all();
             }
         };
@@ -159,6 +165,12 @@ namespace txl
                 std::swap(set_, p.set_);
             }
             return *this;
+        }
+        
+        auto move_from(promise<void> & p) -> void
+        {
+            std::swap(set_, p.set_);
+            p.awaiter_.assign(awaiter_);
         }
 
         auto get_future() const -> future<void>
@@ -405,6 +417,11 @@ namespace txl
             }
             return *this;
         }
+        
+        auto get_promise() -> promise<ReturnType> &
+        {
+            return chain_.get_promise();;
+        }
 
         auto empty() const -> bool
         {
@@ -491,6 +508,7 @@ namespace txl
     struct closure
     {
         virtual auto execute() -> void = 0;
+        virtual auto next() -> bool = 0;
     };
 
     template<class ReturnType>
@@ -498,17 +516,40 @@ namespace txl
     {
     private:
         task_chain<ReturnType> * chain_;
-        task_context<ReturnType> * ctx_;
+        task_context<ReturnType> ctx_;
     public:
-        task_closure(task_chain<ReturnType> & chain, task_context<ReturnType> & ctx)
+        task_closure(task_chain<ReturnType> & chain)
             : chain_(&chain)
-            , ctx_(&ctx)
         {
         }
 
         auto execute() -> void override
         {
-            chain_->execute_top(*ctx_);
+            ctx_ = task_context<ReturnType>{chain_->get_promise()};
+            chain_->execute_top(ctx_);
+        }
+
+        auto next() -> bool override
+        {
+            if (chain_)
+            {
+                auto & prev_promise = chain_->get_promise();
+                chain_ = chain_->next();
+                
+                // Move promise forward
+                if (chain_)
+                {
+                    chain_->get_promise().move_from(prev_promise);
+                }
+                return chain_ != nullptr;
+            }
+
+            return false;
+        }
+
+        auto context() const -> task_context<ReturnType> const &
+        {
+            return ctx_;
         }
     };
 
@@ -517,7 +558,7 @@ namespace txl
     private:
         static std::unique_ptr<task_runner> global_;
     public:
-        virtual auto run(closure && c) -> void = 0;
+        virtual auto run(closure & c) -> task<void> = 0;
         virtual auto delay(uint64_t nanos) -> task<void> = 0;
 
         static auto global() -> task_runner &
@@ -528,9 +569,16 @@ namespace txl
 
     struct inline_task_runner : task_runner
     {
-        auto run(closure && c) -> void override
+        auto run(closure & c) -> task<void> override
         {
-            c.execute();
+            auto completion = task<void>{};
+            do
+            {
+                c.execute();
+            }
+            while (c.next());
+            completion.get_promise().set_value();
+            return completion;
         }
 
         auto delay(uint64_t nanos) -> task<void> override
@@ -557,36 +605,17 @@ namespace txl
     template<class ReturnType>
     auto task<ReturnType>::operator()(task_runner & runner) -> ReturnType const &
     {
-        auto p = &this->chain_;
-        auto ctx = task_context<ReturnType>{};
-        promise<ReturnType> * last_prom = nullptr;
-        while (p)
-        {
-            if (last_prom)
-            {
-                p->get_promise().move_from(*last_prom);
-            }
-            last_prom = &p->get_promise();
-            ctx = task_context<ReturnType>{p->get_promise()};
-            runner.run(task_closure<ReturnType>{*p, ctx});
-            p = p->next();
-        }
-        if constexpr (not std::is_void_v<ReturnType>)
-        {
-            return ctx.result();
-        }
+        auto closure = task_closure<ReturnType>{this->chain_};
+        auto awaiter = runner.run(closure);
+        awaiter.wait();
+        return closure.context().result();
     }
     
     auto task<void>::operator()(task_runner & runner) -> void
     {
-        auto p = &this->chain_;
-        auto ctx = task_context<void>{};
-        while (p)
-        {
-            ctx = task_context<void>{p->get_promise()};
-            runner.run(task_closure<void>{*p, ctx});
-            p = p->next();
-        }
+        auto closure = task_closure<void>{this->chain_};
+        auto awaiter = runner.run(closure);
+        awaiter.wait();
     }
     
     template<class Rep, class Period>
