@@ -43,26 +43,60 @@ namespace txl
             }
         };
 
-        std::shared_ptr<awaiter_core> core_{};
+        std::atomic<std::shared_ptr<awaiter_core>> core_{};
     public:
         awaiter()
             : core_(std::make_shared<awaiter_core>())
         {
         }
+        
+        awaiter(awaiter const & a)
+        {
+            auto p = a.core_.load();
+            core_.store(p);
+        }
+
+        awaiter(awaiter && a)
+        {
+            auto p = a.core_.load();
+            core_.store(p);
+            a.core_.store(std::shared_ptr<awaiter_core>{});
+        }
+        
+        auto operator=(awaiter && a) -> awaiter &
+        {
+            if (this != &a)
+            {
+                auto p = a.core_.load();
+                core_.store(p);
+                a.core_.store(std::shared_ptr<awaiter_core>{});
+            }
+            return *this;
+        }
+        
+        auto operator=(awaiter const & a) -> awaiter &
+        {
+            if (this != &a)
+            {
+                auto p = a.core_.load();
+                core_.store(p);
+            }
+            return *this;
+        }
 
         auto assign(awaiter & a) -> void
         {
-            core_ = a.core_;
+            core_.store(a.core_.load());
         }
 
         auto notify_all() -> void
         {
-            core_->notify_all();
+            core_.load()->notify_all();
         }
 
         auto wait() -> void
         {
-            core_->wait();
+            core_.load()->wait();
         }
     };
 
@@ -274,8 +308,8 @@ namespace txl
     private:
         // TODO: sharing promise when moving task but keeping closures the same?
         promise<ReturnType> prom_;
-        std::unique_ptr<task_function<ReturnType>> work_{};
-        std::unique_ptr<task_chain> next_{};
+        std::unique_ptr<task_function<ReturnType>> work_{nullptr};
+        std::unique_ptr<task_chain> next_{nullptr};
     public:
         task_chain() = default;
 
@@ -326,6 +360,16 @@ namespace txl
                 next_ = std::move(tc.next_);
             }
             return *this;
+        }
+
+        auto reset_promises() -> void
+        {
+            auto * p = this;
+            while (p)
+            {
+                p->prom_ = promise<ReturnType>{};
+                p = p->next();
+            }
         }
 
         auto execute_top(task_context<ReturnType> & ctx) -> void
@@ -408,6 +452,11 @@ namespace txl
         auto append(task_chain<ReturnType> && tc) -> void
         {
             chain_.chain(std::make_unique<task_chain<ReturnType>>(std::move(tc)));
+        }
+
+        auto reset_all_promises() -> void
+        {
+            chain_.reset_promises();
         }
     public:
         task_core() = default;
@@ -587,6 +636,11 @@ namespace txl
     public:
         virtual auto run(closure && c) -> void = 0;
         virtual auto delay(uint64_t nanos) -> task<void> = 0;
+        
+        static auto set_global(std::unique_ptr<task_runner> && runner) -> void
+        {
+            global_ = std::move(runner);
+        }
 
         static auto global() -> task_runner &
         {
@@ -663,7 +717,12 @@ namespace txl
             return {std::move(w)};
         }
     public:
-        thread_pool_worker() = default;
+        thread_pool_worker()
+            : pending_waiter_(std::make_unique<pending_waiter>())
+        {
+        }
+
+        thread_pool_worker(thread_pool_worker const &) = delete;
 
         thread_pool_worker(thread_pool_worker && w)
             : thread_(std::move(w.thread_))
@@ -676,9 +735,29 @@ namespace txl
             w.stopped_.store(old_value);
         }
 
+        auto operator=(thread_pool_worker const &) -> thread_pool_worker & = delete;
+
+        auto operator=(thread_pool_worker && w) -> thread_pool_worker &
+        {
+            if (this != &w)
+            {
+                thread_ = std::move(w.thread_);
+                pending_ = std::move(w.pending_);
+                pending_waiter_ = std::move(w.pending_waiter_);
+                
+                auto old_value = stopped_.load();
+                stopped_.store(w.stopped_.load());
+                w.stopped_.store(old_value);
+            }
+            return *this;
+        }
+
         auto post(std::unique_ptr<closure> && c) -> void
         {
-            pending_.emplace_back(std::move(c));
+            {
+                auto lock = std::unique_lock<std::mutex>{pending_waiter_->mut_};
+                pending_.emplace_back(std::move(c));
+            }
             pending_waiter_->cond_.notify_one();
         }
 
@@ -725,6 +804,7 @@ namespace txl
             if (index == workers_.size())
             {
                 next_thread_index_.store(0, std::memory_order_seq_cst);
+                index = 0;
             }
             workers_[index].post(std::move(c));
         }
@@ -793,6 +873,7 @@ namespace txl
     template<class ReturnType>
     auto task<ReturnType>::operator()(task_runner & runner) -> ReturnType &&
     {
+        this->reset_all_promises();
         auto * tail = this->chain_.tail();
         runner.run(task_closure<ReturnType>{this->chain_});
         tail->get_promise().get_future().wait();
@@ -801,6 +882,7 @@ namespace txl
     
     auto task<void>::operator()(task_runner & runner) -> void
     {
+        this->reset_all_promises();
         auto * tail = this->chain_.tail();
         runner.run(task_closure<void>{this->chain_});
         tail->get_promise().get_future().wait();

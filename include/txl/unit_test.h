@@ -6,9 +6,11 @@
 #include <iostream>
 #include <sstream>
 #include <stdexcept>
+#include <string_view>
 #include <vector>
 
 #define _TXL_TEST_NAME(n) __test_##n
+#define _TXL_VARIATION_NAME(n) __test_variation_##n
 
 #define TXL_UNIT_TEST(name) struct _test_##name : txl::unit_test  \
     {   \
@@ -18,14 +20,41 @@
             txl::add_test(this); \
         }   \
         \
-        void _begin_test() override  \
+        void _begin_test(std::string_view variation) override  \
         {   \
-            std::cout << "[test_" << #name << "] -- "; \
+            if (variation.empty())  \
+            {   \
+                std::cout << "[test_" << #name << "] -- "; \
+            }   \
+            else    \
+            {   \
+                std::cout << "[test_" << #name << " (" << variation << ")] -- "; \
+            }   \
         }   \
         void _test() override;   \
     };  \
     static _test_##name _TXL_TEST_NAME(name){txl::init_test};   \
     void _test_##name::_test()
+
+#define TXL_UNIT_TEST_VARIATION(name, func) struct _test_variation_##name : txl::unit_test_variation  \
+    {   \
+        _test_variation_##name() = default; \
+        _test_variation_##name(txl::init_test_t)    \
+        {   \
+            txl::add_test_variation(this);   \
+        }   \
+        \
+        auto get_name() const -> std::string_view override  \
+        {   \
+            return #name;   \
+        }   \
+        \
+        auto setup() -> void override   \
+        {   \
+            func(); \
+        }   \
+    };  \
+    static _test_variation_##name _TXL_VARIATION_NAME(name){txl::init_test}
 
 #define TXL_RUN_TESTS() int main()  \
     {   \
@@ -36,6 +65,12 @@ namespace txl
 {
     struct init_test_t {};
     static init_test_t init_test{};
+
+    struct unit_test_variation
+    {
+        virtual auto setup() -> void = 0;
+        virtual auto get_name() const -> std::string_view = 0;
+    };
 
     struct unit_test
     {
@@ -52,7 +87,7 @@ namespace txl
             using std::runtime_error::runtime_error;
         };
 
-        virtual void _begin_test() = 0;
+        virtual void _begin_test(std::string_view variation = {}) = 0;
         virtual void _end_test(bool success)
         {
             if (success)
@@ -189,19 +224,24 @@ namespace txl
     }
 
     static std::list<unit_test *> __tests;
+    static std::list<unit_test_variation *> __variations;
 
     static void add_test(unit_test * test)
     {
         __tests.emplace_back(test);
     }
-
-    static auto run_tests() -> int
+    
+    [[maybe_unused]] static void add_test_variation(unit_test_variation * variation)
     {
-        auto exit_code = 0;
+        __variations.emplace_back(variation);
+    }
 
+    static auto run_all_tests(std::string_view variation_name = {}) -> bool
+    {
+        auto success = true;
         for (auto & test : __tests)
         {
-            test->_begin_test();
+            test->_begin_test(variation_name);
             try
             {
                 test->_test();
@@ -209,20 +249,44 @@ namespace txl
             }
             catch (unit_test::assertion_error const & err)
             {
-                exit_code = 1;
+                success = false;
                 test->_end_test(false);
             }
             catch (std::exception const & ex)
             {
-                exit_code = 1;
+                success = false;
                 test->_set_error(ex.what());
                 test->_end_test(false);
             }
             catch (...)
             {
-                exit_code = 1;
+                success = false;
                 test->_set_error("unknown exception type thrown");
                 test->_end_test(false);
+            }
+        }
+        return success;
+    }
+
+    static auto run_tests() -> int
+    {
+        auto exit_code = 0;
+        if (__variations.empty())
+        {
+            if (not run_all_tests())
+            {
+                exit_code = 1;
+            }
+        }
+        else
+        {
+            for (auto & v : __variations)
+            {
+                v->setup();
+                if (not run_all_tests(v->get_name()))
+                {
+                    exit_code = 1;
+                }
             }
         }
 

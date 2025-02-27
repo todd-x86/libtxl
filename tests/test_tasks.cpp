@@ -3,6 +3,14 @@
 
 #include <sstream>
 
+TXL_UNIT_TEST_VARIATION(inline_runner, []() {
+    txl::task_runner::set_global(std::make_unique<txl::inline_task_runner>());
+});
+
+TXL_UNIT_TEST_VARIATION(thread_pool_runner, []() {
+    txl::task_runner::set_global(std::make_unique<txl::thread_pool_task_runner>(4));
+});
+
 TXL_UNIT_TEST(simple)
 {
     auto num_calls = 0;
