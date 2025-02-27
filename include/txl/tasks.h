@@ -53,6 +53,12 @@ namespace txl
             , awaiter_(std::move(p.awaiter_))
         {
         }
+
+        auto reset() -> void
+        {
+            value_.reset();
+            awaiter_.reset();
+        }
         
         auto operator=(promise && p) -> promise &
         {
@@ -87,10 +93,21 @@ namespace txl
 
         auto has_value() const -> bool { return value_.has_value(); }
         
-        auto set_value(ReturnType && val) -> void
+        auto set_value(ReturnType && val, bool notify = true) -> void
         {
             value_ = std::move(val);
-            notify_awaiters();
+            if (notify)
+            {
+                notify_awaiters();
+            }
+        }
+
+        auto notify_all() -> void
+        {
+            if (value_)
+            {
+                notify_awaiters();
+            }
         }
     };
     
@@ -112,6 +129,12 @@ namespace txl
             : awaiter_(std::move(p.awaiter_))
         {
             std::swap(set_, p.set_);
+        }
+        
+        auto reset() -> void
+        {
+            set_ = false;
+            awaiter_.reset();
         }
 
         auto operator=(promise && p) -> promise &
@@ -137,10 +160,21 @@ namespace txl
 
         auto has_value() const -> bool { return set_; }
         
-        auto set_value() -> void
+        auto set_value(bool notify = true) -> void
         {
             set_ = true;
-            notify_awaiters();
+            if (notify)
+            {
+                notify_awaiters();
+            }
+        }
+        
+        auto notify_all() -> void
+        {
+            if (set_)
+            {
+                notify_awaiters();
+            }
         }
     };
 
@@ -168,7 +202,7 @@ namespace txl
 
         auto set_result(ReturnType && v) -> void
         {
-            prom_->set_value(std::move(v));
+            prom_->set_value(std::move(v), false);
         }
     };
 
@@ -188,6 +222,11 @@ namespace txl
         }
 
         auto is_success() const -> bool { return success_; }
+        
+        auto set_result() -> void
+        {
+            prom_->set_value(false);
+        }
     };
 
     template<class ReturnType>
@@ -225,20 +264,13 @@ namespace txl
     {
     private:
         // TODO: sharing promise when moving task but keeping closures the same?
-        promise<ReturnType> prom_;
         std::unique_ptr<task_function<ReturnType>> work_{nullptr};
         std::unique_ptr<task_chain> next_{nullptr};
     public:
         task_chain() = default;
 
-        task_chain(promise<ReturnType> && p)
-            : prom_(std::move(p))
-        {
-        }
-
         task_chain(task_chain && tc)
-            : prom_(std::move(tc.prom_))
-            , work_(std::move(tc.work_))
+            : work_(std::move(tc.work_))
             , next_(std::move(tc.next_))
         {
         }
@@ -273,57 +305,20 @@ namespace txl
         {
             if (this != &tc)
             {
-                prom_ = std::move(tc.prom_);
                 work_ = std::move(tc.work_);
                 next_ = std::move(tc.next_);
             }
             return *this;
         }
 
-        auto reset_promises() -> void
-        {
-            auto * p = this;
-            while (p)
-            {
-                p->prom_ = promise<ReturnType>{};
-                p = p->next();
-            }
-        }
-
         auto execute_top(task_context<ReturnType> & ctx) -> void
         {
             if (not work_)
             {
-                if constexpr (std::is_void_v<ReturnType>)
-                {
-                    // By nature of a non-returning task, we must acknowledge
-                    // that it can be empty and thus if we execute it we must
-                    // enforce the promise.
-                    prom_.set_value();
-                }
                 return;
             }
 
-            if constexpr (std::is_void_v<ReturnType>)
-            {
-                work_->execute(ctx);
-                // TODO: move to task_context
-                prom_.set_value();
-            }
-            else
-            {
-                work_->execute(ctx);
-            }
-        }
-
-        auto get_promise() -> promise<ReturnType> &
-        {
-            return prom_;
-        }
-
-        auto wait() -> void
-        {
-            prom_.get_future().wait();
+            work_->execute(ctx);
         }
 
         auto tail() -> task_chain *
@@ -360,6 +355,7 @@ namespace txl
     class task_core
     {
     protected:
+        promise<ReturnType> prom_;
         task_chain<ReturnType> chain_;
 
         auto assign(task_chain<ReturnType> && tc) -> void
@@ -371,16 +367,11 @@ namespace txl
         {
             chain_.chain(std::make_unique<task_chain<ReturnType>>(std::move(tc)));
         }
-
-        auto reset_all_promises() -> void
-        {
-            chain_.reset_promises();
-        }
     public:
         task_core() = default;
 
         task_core(promise<ReturnType> && p)
-            : chain_(std::move(p))
+            : prom_(std::move(p))
         {
         }
         
@@ -410,7 +401,7 @@ namespace txl
         
         auto get_promise() -> promise<ReturnType> &
         {
-            return chain_.get_promise();
+            return prom_;
         }
 
         auto empty() const -> bool
@@ -500,17 +491,20 @@ namespace txl
         virtual auto move() const -> std::unique_ptr<closure> = 0;
         virtual auto execute() -> void = 0;
         virtual auto next() -> bool = 0;
+        virtual auto complete() -> void = 0;
     };
 
     template<class ReturnType>
     class task_closure : public closure
     {
     private:
+        promise<ReturnType> * prom_;
         task_chain<ReturnType> * chain_;
         task_context<ReturnType> ctx_;
     public:
-        task_closure(task_chain<ReturnType> & chain)
-            : chain_(&chain)
+        task_closure(promise<ReturnType> & prom, task_chain<ReturnType> & chain)
+            : prom_(&prom)
+            , chain_(&chain)
         {
         }
 
@@ -524,26 +518,38 @@ namespace txl
 
         auto execute() -> void override
         {
-            ctx_ = task_context<ReturnType>{chain_->get_promise()};
+            ctx_ = task_context<ReturnType>{*prom_};
             chain_->execute_top(ctx_);
+
+            if constexpr (std::is_void_v<ReturnType>)
+            {
+                // By nature of a non-returning task, we must acknowledge
+                // that it can be empty and thus if we execute it we must
+                // enforce the promise.
+                ctx_.set_result();
+            }
         }
 
         auto next() -> bool override
         {
             if (chain_)
             {
-                auto & prev_promise = chain_->get_promise();
+                // Move promise forward
                 chain_ = chain_->next();
                 
-                // Move promise forward
                 if (chain_)
                 {
-                    chain_->get_promise().move_from(std::move(prev_promise));
                     return true;
                 }
             }
 
             return false;
+        }
+
+        auto complete() -> void override
+        {
+            assert(prom_->has_value());
+            prom_->notify_all();
         }
     };
 
@@ -575,6 +581,7 @@ namespace txl
                 c.execute();
             }
             while (c.next());
+            c.complete();
         }
 
         auto delay(uint64_t nanos) -> task<void> override
@@ -612,6 +619,7 @@ namespace txl
                         work->execute();
                     }
                     while (not stopped_.load(std::memory_order_relaxed) and work->next());
+                    work->complete();
                 }
             }
         }
@@ -791,19 +799,17 @@ namespace txl
     template<class ReturnType>
     auto task<ReturnType>::operator()(task_runner & runner) -> ReturnType &&
     {
-        this->reset_all_promises();
-        auto * tail = this->chain_.tail();
-        runner.run(task_closure<ReturnType>{this->chain_});
-        tail->get_promise().get_future().wait();
-        return tail->get_promise().release_value();
+        this->prom_.reset();
+        runner.run(task_closure<ReturnType>{this->prom_, this->chain_});
+        this->prom_.get_future().wait();
+        return this->prom_.release_value();
     }
     
     auto task<void>::operator()(task_runner & runner) -> void
     {
-        this->reset_all_promises();
-        auto * tail = this->chain_.tail();
-        runner.run(task_closure<void>{this->chain_});
-        tail->get_promise().get_future().wait();
+        this->prom_.reset();
+        runner.run(task_closure<void>{this->prom_, this->chain_});
+        this->prom_.get_future().wait();
     }
     
     template<class Rep, class Period>

@@ -22,6 +22,11 @@ namespace txl
             bool set_ = false;
             char padding_[128];
 
+            auto reset() -> void
+            {
+                set_ = false;
+            }
+
             auto wait() -> void
             {
                 if (not set_)
@@ -79,6 +84,15 @@ namespace txl
         auto assign(awaiter & a) -> void
         {
             core_ = a.core_;
+        }
+
+        auto reset() -> void
+        {
+            auto p = core_;
+            if (p)
+            {
+                p->reset();
+            }
         }
 
         auto notify_all() -> void

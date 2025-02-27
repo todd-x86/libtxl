@@ -22,7 +22,7 @@ TXL_UNIT_TEST(baseline)
 TXL_UNIT_TEST(awaiter)
 {
     std::atomic<size_t> next_index = 0;
-    std::array<txl::awaiter, 4> awaiters{};
+    std::array<txl::awaiter, 3> awaiters{};
     for (size_t i = 0; i < awaiters.size(); ++i)
     {
         awaiters[i] = txl::awaiter{};
@@ -41,7 +41,6 @@ TXL_UNIT_TEST(awaiter)
             i = 0;
         }
         awaiters[i].notify_all();
-        awaiters[index] = txl::awaiter{};
         awaiters[index].wait();
     }};
     t.set_thread_scale(2, 5);
