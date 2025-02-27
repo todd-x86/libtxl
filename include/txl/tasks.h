@@ -1,5 +1,6 @@
 #pragma once
 
+#include <txl/threading.h>
 #include <txl/on_exit.h>
 
 #include <atomic>
@@ -17,89 +18,6 @@
 
 namespace txl
 {
-    class awaiter
-    {
-    private:
-        struct awaiter_core final
-        {
-            std::condition_variable cond_;
-            std::mutex mut_;
-            // TODO: atomic_bool
-            bool set_ = false;
-
-            auto wait() -> void
-            {
-                if (not set_)
-                {
-                    auto lock = std::unique_lock<std::mutex>{mut_};
-                    cond_.wait(lock);
-                }
-            }
-
-            auto notify_all() -> void
-            {
-                set_ = true;
-                cond_.notify_all();
-            }
-        };
-
-        std::atomic<std::shared_ptr<awaiter_core>> core_{};
-    public:
-        awaiter()
-            : core_(std::make_shared<awaiter_core>())
-        {
-        }
-        
-        awaiter(awaiter const & a)
-        {
-            auto p = a.core_.load();
-            core_.store(p);
-        }
-
-        awaiter(awaiter && a)
-        {
-            auto p = a.core_.load();
-            core_.store(p);
-            a.core_.store(std::shared_ptr<awaiter_core>{});
-        }
-        
-        auto operator=(awaiter && a) -> awaiter &
-        {
-            if (this != &a)
-            {
-                auto p = a.core_.load();
-                core_.store(p);
-                a.core_.store(std::shared_ptr<awaiter_core>{});
-            }
-            return *this;
-        }
-        
-        auto operator=(awaiter const & a) -> awaiter &
-        {
-            if (this != &a)
-            {
-                auto p = a.core_.load();
-                core_.store(p);
-            }
-            return *this;
-        }
-
-        auto assign(awaiter & a) -> void
-        {
-            core_.store(a.core_.load());
-        }
-
-        auto notify_all() -> void
-        {
-            core_.load()->notify_all();
-        }
-
-        auto wait() -> void
-        {
-            core_.load()->wait();
-        }
-    };
-
     template<class ReturnType>
     class future
     {
@@ -151,7 +69,7 @@ namespace txl
             return {awaiter_};
         }
 
-        auto move_from(promise<ReturnType> & p) -> void
+        auto move_from(promise<ReturnType> && p) -> void
         {
             value_ = std::move(p.value_);
             p.awaiter_.assign(awaiter_);
@@ -206,9 +124,9 @@ namespace txl
             return *this;
         }
         
-        auto move_from(promise<void> & p) -> void
+        auto move_from(promise<void> && p) -> void
         {
-            std::swap(set_, p.set_);
+            set_ = p.set_;
             p.awaiter_.assign(awaiter_);
         }
 
@@ -620,7 +538,7 @@ namespace txl
                 // Move promise forward
                 if (chain_)
                 {
-                    chain_->get_promise().move_from(prev_promise);
+                    chain_->get_promise().move_from(std::move(prev_promise));
                     return true;
                 }
             }
