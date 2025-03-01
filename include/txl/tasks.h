@@ -411,7 +411,7 @@ namespace txl
 
         auto wait() -> void
         {
-            chain_.wait();
+            prom_.get_future().wait();
         }
         
         auto then(task_core && t) -> void
@@ -458,6 +458,8 @@ namespace txl
             return std::move(*this);
         }
 
+        auto run(task_runner & runner) -> future<ReturnType>;
+
         auto operator()() -> ReturnType &&;
 
         auto operator()(task_runner & runner) -> ReturnType &&;
@@ -480,6 +482,8 @@ namespace txl
             task_core<void>::then(std::move(f));
             return std::move(*this);
         }
+
+        auto run(task_runner & runner) -> future<void>;
         
         auto operator()() -> void;
 
@@ -784,11 +788,26 @@ namespace txl
             }};
         }
     };
+
+    template<class ReturnType>
+    auto task<ReturnType>::run(task_runner & runner) -> future<ReturnType>
+    {
+        this->prom_.reset();
+        runner.run(task_closure<ReturnType>{this->prom_, this->chain_});
+        return this->prom_.get_future();
+    }
     
     template<class ReturnType>
     auto task<ReturnType>::operator()() -> ReturnType &&
     {
         return (*this)(task_runner::global());
+    }
+    
+    auto task<void>::run(task_runner & runner) -> future<void>
+    {
+        this->prom_.reset();
+        runner.run(task_closure<void>{this->prom_, this->chain_});
+        return this->prom_.get_future();
     }
     
     auto task<void>::operator()() -> void
@@ -799,17 +818,13 @@ namespace txl
     template<class ReturnType>
     auto task<ReturnType>::operator()(task_runner & runner) -> ReturnType &&
     {
-        this->prom_.reset();
-        runner.run(task_closure<ReturnType>{this->prom_, this->chain_});
-        this->prom_.get_future().wait();
+        run(runner).wait();
         return this->prom_.release_value();
     }
     
     auto task<void>::operator()(task_runner & runner) -> void
     {
-        this->prom_.reset();
-        runner.run(task_closure<void>{this->prom_, this->chain_});
-        this->prom_.get_future().wait();
+        run(runner).wait();
     }
     
     template<class Rep, class Period>

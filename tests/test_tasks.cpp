@@ -196,4 +196,76 @@ TXL_UNIT_TEST(something_then_nothing)
     assert_equal(num_calls, 2);
 }
 
+static auto is_prime(int s) -> bool
+{
+    for (auto i = 2; i <= (s >> 1); ++i)
+    {
+        if (s % i == 0)
+        {
+            return false;
+        }
+    }
+    return true;
+}
+
+template<class T>
+struct safe_vector final
+{
+private:
+    std::vector<T> data_{};
+    std::mutex mut_;
+public:
+    template<class... Args>
+    auto emplace_back(Args && ... args)
+    {
+        std::unique_lock<std::mutex> lk{mut_};
+        data_.emplace_back(std::forward<Args>(args)...);
+    }
+
+    auto size() const -> size_t { return data_.size(); }
+
+    auto copy() const -> std::vector<T>
+    {
+        return data_;
+    }
+};
+
+
+TXL_UNIT_TEST(run_in_parallel)
+{
+    safe_vector<int> primes{};
+    std::vector<txl::task<void>> tasks{};
+
+    for (auto i = 0; i < 100; ++i)
+    {
+        auto start = i * 1000;
+        auto end = (i + 1) * 1000;
+        auto t = txl::task<void>{[&primes, start, end]() {
+            for (auto i = start; i < end; ++i)
+            {
+                if (is_prime(i))
+                {
+                    primes.emplace_back(i);
+                }
+            }
+        }};
+        tasks.emplace_back(std::move(t));
+    }
+
+    auto c1 = std::chrono::high_resolution_clock::now();
+    for (auto & t : tasks)
+    {
+        t.get_promise().reset();
+        t.run(txl::task_runner::global());
+    }
+    for (auto & t : tasks)
+    {
+        t.wait();
+    }
+    auto c2 = std::chrono::high_resolution_clock::now();
+
+    std::cout << "TIME: " << std::chrono::duration_cast<std::chrono::microseconds>(c2-c1) << " | " << primes.size() << std::endl;
+    assert_equal(primes.size(), 9594);
+}
+
 TXL_RUN_TESTS()
