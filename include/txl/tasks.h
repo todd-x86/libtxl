@@ -96,6 +96,14 @@ namespace txl
         auto has_exception() const -> bool { return res_.template has<std::exception_ptr>(); }
         auto get_exception() const -> std::exception_ptr { return res_.template get<std::exception_ptr>(); }
         
+        auto rethrow_if_exception() const -> void
+        {
+            if (has_exception())
+            {
+                std::rethrow_exception(get_exception());
+            }
+        }
+        
         auto set_exception(std::exception_ptr && p, bool notify = true) -> void
         {
             res_ = std::move(p);
@@ -173,6 +181,14 @@ namespace txl
         auto has_value() const -> bool { return res_.template has<bool>(); }
         auto has_exception() const -> bool { return res_.has<std::exception_ptr>(); }
         auto get_exception() const -> std::exception_ptr { return res_.get<std::exception_ptr>(); }
+
+        auto rethrow_if_exception() const -> void
+        {
+            if (has_exception())
+            {
+                std::rethrow_exception(get_exception());
+            }
+        }
         
         auto set_exception(std::exception_ptr && p, bool notify = true) -> void
         {
@@ -694,12 +710,14 @@ namespace txl
     auto task<ReturnType>::operator()(task_runner & runner) -> ReturnType &&
     {
         run(runner).wait();
+        this->prom_.rethrow_if_exception();
         return this->prom_.release_value();
     }
     
     auto task<void>::operator()(task_runner & runner) -> void
     {
         run(runner).wait();
+        this->prom_.rethrow_if_exception();
     }
     
     template<class Rep, class Period>
