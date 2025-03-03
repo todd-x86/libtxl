@@ -92,4 +92,18 @@ TXL_UNIT_TEST(storage_union_has)
     assert_false(v.has<std::string>());
 }
 
+TXL_UNIT_TEST(storage_union_release)
+{
+    auto v = txl::storage_union<int, std::string>{};
+    v = "hello world this is a long string";
+    assert_false(v.has<int>());
+    assert_true(v.has<std::string>());
+    
+    auto s = v.release<std::string>();
+    assert_false(v.has<int>());
+    assert_false(v.has<std::string>());
+
+    assert_equal(s, "hello world this is a long string");
+}
+
 TXL_RUN_TESTS()

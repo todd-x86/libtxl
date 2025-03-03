@@ -2,6 +2,7 @@
 
 #include <functional>
 #include <condition_variable>
+#include <list>
 #include <memory>
 #include <mutex>
 #include <atomic>
@@ -110,6 +111,175 @@ namespace txl
             if (p)
             {
                 p->wait();
+            }
+        }
+    };
+    
+    struct thread_pool_work
+    {
+        virtual auto execute() -> void = 0;
+        virtual auto next() -> bool = 0;
+        virtual auto complete() -> void = 0;
+    };
+
+    class thread_pool_worker
+    {
+    private:
+        struct pending_waiter final
+        {
+            std::condition_variable cond_;
+            std::mutex mut_;
+        };
+        std::thread thread_;
+        std::list<std::unique_ptr<thread_pool_work>> pending_;
+        std::unique_ptr<pending_waiter> pending_waiter_;
+        std::atomic_bool stopped_;
+
+        auto thread_body() -> void
+        {
+            while (not stopped_.load(std::memory_order_relaxed))
+            {
+                auto work = get_work();
+                if (work)
+                {
+                    do
+                    {
+                        work->execute();
+                    }
+                    while (not stopped_.load(std::memory_order_relaxed) and work->next());
+                    work->complete();
+                }
+            }
+        }
+
+        auto get_work() -> std::unique_ptr<thread_pool_work>
+        {
+            while (not stopped_.load(std::memory_order_relaxed) and pending_.empty())
+            {
+                auto lock = std::unique_lock<std::mutex>{pending_waiter_->mut_};
+                pending_waiter_->cond_.wait(lock, [this]() {
+                    return not pending_.empty();
+                });
+            }
+            if (stopped_.load(std::memory_order_relaxed) or pending_.empty())
+            {
+                return {};
+            }
+
+            auto w = std::move(pending_.front());
+            pending_.pop_front();
+            return {std::move(w)};
+        }
+    public:
+        thread_pool_worker()
+            : pending_waiter_(std::make_unique<pending_waiter>())
+        {
+        }
+
+        thread_pool_worker(thread_pool_worker const &) = delete;
+
+        thread_pool_worker(thread_pool_worker && w)
+            : thread_(std::move(w.thread_))
+            , pending_(std::move(w.pending_))
+            , pending_waiter_(std::move(w.pending_waiter_))
+            , stopped_()
+        {
+            auto old_value = stopped_.load();
+            stopped_.store(w.stopped_.load());
+            w.stopped_.store(old_value);
+        }
+
+        auto operator=(thread_pool_worker const &) -> thread_pool_worker & = delete;
+
+        auto operator=(thread_pool_worker && w) -> thread_pool_worker &
+        {
+            if (this != &w)
+            {
+                thread_ = std::move(w.thread_);
+                pending_ = std::move(w.pending_);
+                pending_waiter_ = std::move(w.pending_waiter_);
+                
+                auto old_value = stopped_.load();
+                stopped_.store(w.stopped_.load());
+                w.stopped_.store(old_value);
+            }
+            return *this;
+        }
+
+        auto post(std::unique_ptr<thread_pool_work> && c) -> void
+        {
+            {
+                auto lock = std::unique_lock<std::mutex>{pending_waiter_->mut_};
+                pending_.emplace_back(std::move(c));
+            }
+            pending_waiter_->cond_.notify_one();
+        }
+
+        auto is_running() const -> bool
+        {
+            return not stopped_.load(std::memory_order_relaxed);
+        }
+
+        auto start() -> void
+        {
+            stopped_.store(false, std::memory_order_seq_cst);
+
+            thread_ = std::thread([&]() {
+                thread_body();
+            });
+        }
+
+        auto stop() -> void
+        {
+            stopped_.store(true, std::memory_order_seq_cst);
+            pending_waiter_->cond_.notify_all();
+        }
+
+        auto wait_for_shutdown() -> void
+        {
+            thread_.join();
+        }
+    };
+
+    class thread_pool
+    {
+    private:
+        std::vector<thread_pool_worker> workers_{};
+        std::atomic<size_t> next_thread_index_ = 0;
+    public:
+        thread_pool(size_t num_threads)
+        {
+            workers_.resize(num_threads);
+        }
+
+        auto post_work(std::unique_ptr<thread_pool_work> && c) -> void
+        {
+            auto index = next_thread_index_.fetch_add(1);
+            if (index == workers_.size())
+            {
+                next_thread_index_.store(0, std::memory_order_seq_cst);
+                index = 0;
+            }
+            workers_[index].post(std::move(c));
+        }
+
+        auto start_workers() -> void
+        {
+            for (auto & w : workers_)
+            {
+                w.start();
+            }
+        }
+
+        auto stop_workers() -> void
+        {
+            for (auto & w : workers_)
+            {
+                w.stop();
+            }
+            for (auto & w : workers_)
+            {
+                w.wait_for_shutdown();
             }
         }
     };

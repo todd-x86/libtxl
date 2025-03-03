@@ -1,12 +1,13 @@
 #pragma once
 
 #include <txl/threading.h>
-#include <txl/on_exit.h>
+#include <txl/storage_union.h>
 
 #include <atomic>
 #include <cassert>
 #include <chrono>
 #include <condition_variable>
+#include <exception>
 #include <functional>
 #include <future>
 #include <list>
@@ -39,7 +40,7 @@ namespace txl
     class promise
     {
     private:
-        std::optional<ReturnType> value_{};
+        storage_union<ReturnType, std::exception_ptr> res_{};
         awaiter awaiter_{};
 
         auto notify_awaiters() -> void
@@ -49,14 +50,14 @@ namespace txl
     public:
         promise() = default;
         promise(promise && p)
-            : value_(std::move(p.value_))
+            : res_(std::move(p.res_))
             , awaiter_(std::move(p.awaiter_))
         {
         }
 
         auto reset() -> void
         {
-            value_.reset();
+            res_.reset();
             awaiter_.reset();
         }
         
@@ -64,7 +65,7 @@ namespace txl
         {
             if (this != &p)
             {
-                value_ = std::move(p.value_);
+                res_ = std::move(p.res_);
                 awaiter_ = std::move(p.awaiter_);
             }
             return *this;
@@ -77,25 +78,36 @@ namespace txl
 
         auto move_from(promise<ReturnType> && p) -> void
         {
-            value_ = std::move(p.value_);
+            res_ = std::move(p.res_);
             p.awaiter_.assign(awaiter_);
         }
 
         auto release_value() -> ReturnType &&
         {
-            return std::move(*value_);
+            return std::move(res_.template ref<ReturnType>());
         }
 
         auto get_value() const -> ReturnType const &
         {
-            return *value_;
+            return res_.template ref<ReturnType>();
         }
 
-        auto has_value() const -> bool { return value_.has_value(); }
+        auto has_value() const -> bool { return res_.template has<ReturnType>(); }
+        auto has_exception() const -> bool { return res_.template has<std::exception_ptr>(); }
+        auto get_exception() const -> std::exception_ptr { return res_.template get<std::exception_ptr>(); }
         
+        auto set_exception(std::exception_ptr && p, bool notify = true) -> void
+        {
+            res_ = std::move(p);
+            if (notify)
+            {
+                notify_awaiters();
+            }
+        }
+
         auto set_value(ReturnType && val, bool notify = true) -> void
         {
-            value_ = std::move(val);
+            res_ = std::move(val);
             if (notify)
             {
                 notify_awaiters();
@@ -104,7 +116,7 @@ namespace txl
 
         auto notify_all() -> void
         {
-            if (value_)
+            if (not res_.empty())
             {
                 notify_awaiters();
             }
@@ -117,7 +129,7 @@ namespace txl
     private:
         awaiter awaiter_{};
         // TODO: atomic_bool
-        bool set_ = false;
+        storage_union<std::exception_ptr, bool> res_{};
 
         auto notify_awaiters() -> void
         {
@@ -128,12 +140,12 @@ namespace txl
         promise(promise && p)
             : awaiter_(std::move(p.awaiter_))
         {
-            std::swap(set_, p.set_);
+            std::swap(res_, p.res_);
         }
         
         auto reset() -> void
         {
-            set_ = false;
+            res_ = false;
             awaiter_.reset();
         }
 
@@ -142,14 +154,14 @@ namespace txl
             if (this != &p)
             {
                 awaiter_ = std::move(p.awaiter_);
-                std::swap(set_, p.set_);
+                std::swap(res_, p.res_);
             }
             return *this;
         }
         
         auto move_from(promise<void> && p) -> void
         {
-            set_ = p.set_;
+            res_ = p.res_;
             p.awaiter_.assign(awaiter_);
         }
 
@@ -158,11 +170,22 @@ namespace txl
             return {awaiter_};
         }
 
-        auto has_value() const -> bool { return set_; }
+        auto has_value() const -> bool { return res_.template has<bool>(); }
+        auto has_exception() const -> bool { return res_.has<std::exception_ptr>(); }
+        auto get_exception() const -> std::exception_ptr { return res_.get<std::exception_ptr>(); }
+        
+        auto set_exception(std::exception_ptr && p, bool notify = true) -> void
+        {
+            res_ = std::move(p);
+            if (notify)
+            {
+                notify_awaiters();
+            }
+        }
         
         auto set_value(bool notify = true) -> void
         {
-            set_ = true;
+            res_ = true;
             if (notify)
             {
                 notify_awaiters();
@@ -171,7 +194,7 @@ namespace txl
         
         auto notify_all() -> void
         {
-            if (set_)
+            if (not res_.empty())
             {
                 notify_awaiters();
             }
@@ -204,6 +227,11 @@ namespace txl
         {
             prom_->set_value(std::move(v), false);
         }
+
+        auto set_exception(std::exception_ptr && p) -> void
+        {
+            prom_->set_exception(std::move(p), false);
+        }
     };
 
     template<>
@@ -226,6 +254,11 @@ namespace txl
         auto set_result() -> void
         {
             prom_->set_value(false);
+        }
+
+        auto set_exception(std::exception_ptr && p) -> void
+        {
+            prom_->set_exception(std::move(p), false);
         }
     };
 
@@ -251,6 +284,11 @@ namespace txl
             if constexpr (std::is_void_v<ReturnType>)
             {
                 func_(ctx);
+
+                // By nature of a non-returning task, we must acknowledge
+                // that it can be empty and thus if we execute it we must
+                // enforce the promise.
+                ctx.set_result();
             }
             else
             {
@@ -490,12 +528,9 @@ namespace txl
         auto operator()(task_runner & runner) -> void;
     };
 
-    struct closure
+    struct closure : thread_pool_work
     {
         virtual auto move() const -> std::unique_ptr<closure> = 0;
-        virtual auto execute() -> void = 0;
-        virtual auto next() -> bool = 0;
-        virtual auto complete() -> void = 0;
     };
 
     template<class ReturnType>
@@ -523,14 +558,13 @@ namespace txl
         auto execute() -> void override
         {
             ctx_ = task_context<ReturnType>{*prom_};
-            chain_->execute_top(ctx_);
-
-            if constexpr (std::is_void_v<ReturnType>)
+            try
             {
-                // By nature of a non-returning task, we must acknowledge
-                // that it can be empty and thus if we execute it we must
-                // enforce the promise.
-                ctx_.set_result();
+                chain_->execute_top(ctx_);
+            }
+            catch (...)
+            {
+                ctx_.set_exception(std::current_exception()); 
             }
         }
 
@@ -552,7 +586,10 @@ namespace txl
 
         auto complete() -> void override
         {
-            assert(prom_->has_value());
+            if (not prom_->has_value() and not prom_->has_exception())
+            {
+                prom_->set_exception(std::make_exception_ptr( std::runtime_error{"empty task did not return a result"} ));
+            }
             prom_->notify_all();
         }
     };
@@ -597,168 +634,6 @@ namespace txl
     };
 
     std::unique_ptr<task_runner> task_runner::global_(std::make_unique<inline_task_runner>());
-
-    class thread_pool_worker
-    {
-    private:
-        struct pending_waiter final
-        {
-            std::condition_variable cond_;
-            std::mutex mut_;
-        };
-        std::thread thread_;
-        std::list<std::unique_ptr<closure>> pending_;
-        std::unique_ptr<pending_waiter> pending_waiter_;
-        std::atomic_bool stopped_;
-
-        auto thread_body() -> void
-        {
-            while (not stopped_.load(std::memory_order_relaxed))
-            {
-                auto work = get_work();
-                if (work)
-                {
-                    do
-                    {
-                        work->execute();
-                    }
-                    while (not stopped_.load(std::memory_order_relaxed) and work->next());
-                    work->complete();
-                }
-            }
-        }
-
-        auto get_work() -> std::unique_ptr<closure>
-        {
-            while (not stopped_.load(std::memory_order_relaxed) and pending_.empty())
-            {
-                auto lock = std::unique_lock<std::mutex>{pending_waiter_->mut_};
-                pending_waiter_->cond_.wait(lock, [this]() {
-                    return not pending_.empty();
-                });
-            }
-            if (stopped_.load(std::memory_order_relaxed) or pending_.empty())
-            {
-                return {};
-            }
-
-            auto w = std::move(pending_.front());
-            pending_.pop_front();
-            return {std::move(w)};
-        }
-    public:
-        thread_pool_worker()
-            : pending_waiter_(std::make_unique<pending_waiter>())
-        {
-        }
-
-        thread_pool_worker(thread_pool_worker const &) = delete;
-
-        thread_pool_worker(thread_pool_worker && w)
-            : thread_(std::move(w.thread_))
-            , pending_(std::move(w.pending_))
-            , pending_waiter_(std::move(w.pending_waiter_))
-            , stopped_()
-        {
-            auto old_value = stopped_.load();
-            stopped_.store(w.stopped_.load());
-            w.stopped_.store(old_value);
-        }
-
-        auto operator=(thread_pool_worker const &) -> thread_pool_worker & = delete;
-
-        auto operator=(thread_pool_worker && w) -> thread_pool_worker &
-        {
-            if (this != &w)
-            {
-                thread_ = std::move(w.thread_);
-                pending_ = std::move(w.pending_);
-                pending_waiter_ = std::move(w.pending_waiter_);
-                
-                auto old_value = stopped_.load();
-                stopped_.store(w.stopped_.load());
-                w.stopped_.store(old_value);
-            }
-            return *this;
-        }
-
-        auto post(std::unique_ptr<closure> && c) -> void
-        {
-            {
-                auto lock = std::unique_lock<std::mutex>{pending_waiter_->mut_};
-                pending_.emplace_back(std::move(c));
-            }
-            pending_waiter_->cond_.notify_one();
-        }
-
-        auto is_running() const -> bool
-        {
-            return not stopped_.load(std::memory_order_relaxed);
-        }
-
-        auto start() -> void
-        {
-            stopped_.store(false, std::memory_order_seq_cst);
-
-            thread_ = std::thread([&]() {
-                thread_body();
-            });
-        }
-
-        auto stop() -> void
-        {
-            stopped_.store(true, std::memory_order_seq_cst);
-            pending_waiter_->cond_.notify_all();
-        }
-
-        auto wait_for_shutdown() -> void
-        {
-            thread_.join();
-        }
-    };
-
-    class thread_pool
-    {
-    private:
-        std::vector<thread_pool_worker> workers_{};
-        std::atomic<size_t> next_thread_index_ = 0;
-    public:
-        thread_pool(size_t num_threads)
-        {
-            workers_.resize(num_threads);
-        }
-
-        auto post_work(std::unique_ptr<closure> && c) -> void
-        {
-            auto index = next_thread_index_.fetch_add(1);
-            if (index == workers_.size())
-            {
-                next_thread_index_.store(0, std::memory_order_seq_cst);
-                index = 0;
-            }
-            workers_[index].post(std::move(c));
-        }
-
-        auto start_workers() -> void
-        {
-            for (auto & w : workers_)
-            {
-                w.start();
-            }
-        }
-
-        auto stop_workers() -> void
-        {
-            for (auto & w : workers_)
-            {
-                w.stop();
-            }
-            for (auto & w : workers_)
-            {
-                w.wait_for_shutdown();
-            }
-        }
-    };
 
     struct thread_pool_task_runner : task_runner
     {

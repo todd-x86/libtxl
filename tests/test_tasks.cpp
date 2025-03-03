@@ -110,6 +110,24 @@ TXL_UNIT_TEST(reusable)
     assert_equal(num_calls, 10);
 }
 
+TXL_UNIT_TEST(reusable_return)
+{
+    auto num = 0;
+    auto now_serving = txl::make_task<std::string>([&num]() {
+        auto ss = std::ostringstream{};
+        ss << "Now serving customer " << num;
+        ++num;
+        return ss.str();
+    });
+
+    for (auto i = 0; i < 10; ++i)
+    {
+        auto ss = std::ostringstream{};
+        ss << "Now serving customer " << i;
+        assert_equal(now_serving(), ss.str());
+    }
+}
+
 TXL_UNIT_TEST(sleep)
 {
     auto before = std::chrono::steady_clock::time_point{};
@@ -198,6 +216,7 @@ TXL_UNIT_TEST(something_then_nothing)
 
 static auto is_prime(int s) -> bool
 {
+    // Slow prime number check
     for (auto i = 2; i <= (s >> 1); ++i)
     {
         if (s % i == 0)
@@ -240,6 +259,8 @@ TXL_UNIT_TEST(run_in_parallel)
     {
         auto start = i * 1000;
         auto end = (i + 1) * 1000;
+
+        // Each task computes a series of primes for a subset of integers
         auto t = txl::task<void>{[&primes, start, end]() {
             for (auto i = start; i < end; ++i)
             {
@@ -252,20 +273,37 @@ TXL_UNIT_TEST(run_in_parallel)
         tasks.emplace_back(std::move(t));
     }
 
-    auto c1 = std::chrono::high_resolution_clock::now();
+    // Start all tasks
     for (auto & t : tasks)
     {
         t.get_promise().reset();
         t.run(txl::task_runner::global());
     }
+
+    // Wait for them to complete
     for (auto & t : tasks)
     {
         t.wait();
     }
-    auto c2 = std::chrono::high_resolution_clock::now();
 
-    std::cout << "TIME: " << std::chrono::duration_cast<std::chrono::microseconds>(c2-c1) << " | " << primes.size() << std::endl;
+    // Lazy check to make sure we got the same number of primes
     assert_equal(primes.size(), 9594);
+}
+
+TXL_UNIT_TEST(run_move_and_run)
+{
+    auto called = false;
+    auto num_calls = 0;
+    txl::task<std::string> first([&]() {
+        called = true;
+        ++num_calls;
+        return "I can't stop, I don't know how it works, goodbye folks!";
+    });
+
+    txl::task<std::string> second{};
+    assert_throws<std::runtime_error>([&]() {
+        second();
+    });
 }
 
 TXL_RUN_TESTS()

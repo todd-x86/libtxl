@@ -34,6 +34,15 @@ namespace txl
             }
         }
 
+        template<class R>
+        auto release() -> R &&
+        {
+            if constexpr (std::is_same_v<R, T>)
+            {
+                return std::move(*reinterpret_cast<R *>(&value_[0]));
+            }
+        }
+
         operator T() const { return *reinterpret_cast<T const *>(&value_[0]); }
 
         auto assign(uint8_t & occupied, T && value) -> void
@@ -53,6 +62,9 @@ namespace txl
             storage_union_base<S+1, Args...> args_;
         };
     public:
+        auto data() const -> void const * { return reinterpret_cast<void const *>(&value_[0]); }
+        auto data() -> void * { return reinterpret_cast<void *>(&value_[0]); }
+
         template<class C>
         auto contains(uint8_t occupied) const -> bool
         {
@@ -73,6 +85,16 @@ namespace txl
             {
                 args_.invoke_deleter(occupied);
             }
+        }
+        
+        template<class R>
+        auto release() -> R &&
+        {
+            if constexpr (std::is_same_v<R, T>)
+            {
+                return std::move(*reinterpret_cast<R *>(&value_[0]));
+            }
+            return std::move(args_.template release<R>());
         }
 
         operator T() const { return *reinterpret_cast<T const *>(&value_[0]); }
@@ -114,6 +136,14 @@ namespace txl
             invoke_deleter();
         }
 
+        template<class T>
+        auto ref() const -> T const & { return *reinterpret_cast<T const *>(base_.data()); }
+        
+        template<class T>
+        auto ref() -> T & { return *reinterpret_cast<T *>(base_.data()); }
+
+        auto empty() const -> bool { return occupied_ == std::numeric_limits<uint8_t>::max(); }
+
         auto reset() -> void { occupied_ = std::numeric_limits<uint8_t>::max(); }
 
         template<class T>
@@ -121,6 +151,14 @@ namespace txl
 
         template<class T>
         auto get() const -> T { return static_cast<T>(base_); }
+
+        template<class T>
+        auto release() -> T
+        {
+            auto res = std::move(base_.template release<T>());
+            reset();
+            return res;
+        }
 
         template<class T>
         auto set(T && value) -> void
