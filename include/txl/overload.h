@@ -7,4 +7,7 @@ namespace txl
     {
         using Visitors::operator() ...;
     };
+
+    template<class... Visitors>
+    overload(Visitors...) -> overload<Visitors...>;
 }

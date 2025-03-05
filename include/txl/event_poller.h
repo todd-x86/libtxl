@@ -79,8 +79,8 @@ namespace txl
         using container_type = std::array<event_data, S>;
         container_type data_;
     public:
-        using iterator = container_type::iterator;
-        using const_iterator = container_type::const_iterator;
+        using iterator = typename container_type::iterator;
+        using const_iterator = typename container_type::const_iterator;
 
         auto begin() -> iterator { return data_.begin(); }
         auto end() -> iterator { return data_.end(); }

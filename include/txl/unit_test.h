@@ -78,6 +78,11 @@ namespace txl
         struct test_printer final
         {
             T const & value_;
+
+            test_printer(T const & value)
+                : value_{value}
+            {
+            }
         };
 
         std::ostringstream error_buf_;
@@ -130,7 +135,7 @@ namespace txl
         {
             if (not (expected == static_cast<ExpectedValue const &>(actual)))
             {
-                error_buf_ << "assert_equal: " << test_printer{expected} << " (expected) != " << test_printer{actual} << " (actual)";
+                error_buf_ << "assert_equal: " << test_printer<ExpectedValue>{expected} << " (expected) != " << test_printer<ActualValue>{actual} << " (actual)";
                 throw assertion_error("assertion failed");
             }
         }
@@ -140,7 +145,7 @@ namespace txl
         {
             if ((expected == static_cast<ExpectedValue const &>(actual)))
             {
-                error_buf_ << "assert_not_equal: " << test_printer{expected} << " (expected) == " << test_printer{actual} << " (actual)";
+                error_buf_ << "assert_not_equal: " << test_printer<ExpectedValue>{expected} << " (expected) == " << test_printer<ActualValue>{actual} << " (actual)";
                 throw assertion_error("assertion failed");
             }
         }

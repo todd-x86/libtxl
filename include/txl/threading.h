@@ -21,7 +21,7 @@ namespace txl
             std::mutex mut_;
             // TODO: atomic_bool
             bool set_ = false;
-            char padding_[128];
+            char padding_[64];
 
             auto reset() -> void
             {
@@ -121,6 +121,40 @@ namespace txl
         virtual auto next() -> bool = 0;
         virtual auto complete() -> void = 0;
     };
+    
+    template<class Func>
+    class thread_pool_lambda final : public thread_pool_work
+    {
+    private:
+        Func func_;
+    public:
+        thread_pool_lambda(Func && f)
+            : func_(std::move(f))
+        {
+        }
+
+        auto execute() -> void override
+        {
+            func_();
+        }
+
+        auto next() -> bool override
+        {
+            // No further work to perform
+            return false;
+        }
+        
+        auto complete() -> void override
+        {
+            // Deliberately empty
+        }
+    };
+
+    template<class Func>
+    inline auto make_thread_pool_lambda(Func && func) -> std::unique_ptr<thread_pool_lambda<Func>>
+    {
+        return std::make_unique<thread_pool_lambda<Func>>(std::move(func));
+    }
 
     class thread_pool_worker
     {
@@ -130,6 +164,7 @@ namespace txl
             std::condition_variable cond_;
             std::mutex mut_;
         };
+        awaiter idle_awaiter_;
         std::thread thread_;
         std::list<std::unique_ptr<thread_pool_work>> pending_;
         std::unique_ptr<pending_waiter> pending_waiter_;
@@ -156,9 +191,12 @@ namespace txl
         {
             while (not stopped_.load(std::memory_order_relaxed) and pending_.empty())
             {
+                // Notify that we're in an idle state now
+                idle_awaiter_.notify_all();
+
                 auto lock = std::unique_lock<std::mutex>{pending_waiter_->mut_};
                 pending_waiter_->cond_.wait(lock, [this]() {
-                    return not pending_.empty();
+                    return stopped_.load(std::memory_order_relaxed) or not pending_.empty();
                 });
             }
             if (stopped_.load(std::memory_order_relaxed) or pending_.empty())
@@ -179,7 +217,8 @@ namespace txl
         thread_pool_worker(thread_pool_worker const &) = delete;
 
         thread_pool_worker(thread_pool_worker && w)
-            : thread_(std::move(w.thread_))
+            : idle_awaiter_(std::move(w.idle_awaiter_))
+            , thread_(std::move(w.thread_))
             , pending_(std::move(w.pending_))
             , pending_waiter_(std::move(w.pending_waiter_))
             , stopped_()
@@ -195,6 +234,7 @@ namespace txl
         {
             if (this != &w)
             {
+                idle_awaiter_ = std::move(w.idle_awaiter_);
                 thread_ = std::move(w.thread_);
                 pending_ = std::move(w.pending_);
                 pending_waiter_ = std::move(w.pending_waiter_);
@@ -206,23 +246,34 @@ namespace txl
             return *this;
         }
 
-        auto post(std::unique_ptr<thread_pool_work> && c) -> void
+        auto wait_for_idle() -> void
         {
+            idle_awaiter_.wait();
+        }
+
+        auto post(std::unique_ptr<thread_pool_work> && c) -> bool
+        {
+            if (stopped_.load(std::memory_order_relaxed))
+            {
+                return false;
+            }
+
             {
                 auto lock = std::unique_lock<std::mutex>{pending_waiter_->mut_};
                 pending_.emplace_back(std::move(c));
             }
             pending_waiter_->cond_.notify_one();
+            return true;
         }
 
         auto is_running() const -> bool
         {
             return not stopped_.load(std::memory_order_relaxed);
         }
-
+        
         auto start() -> void
         {
-            stopped_.store(false, std::memory_order_seq_cst);
+            stopped_.store(false, std::memory_order_release);
 
             thread_ = std::thread([&]() {
                 thread_body();
@@ -231,17 +282,20 @@ namespace txl
 
         auto stop() -> void
         {
-            stopped_.store(true, std::memory_order_seq_cst);
+            stopped_.store(true, std::memory_order_release);
             pending_waiter_->cond_.notify_all();
         }
 
         auto wait_for_shutdown() -> void
         {
-            thread_.join();
+            if (thread_.joinable())
+            {
+                thread_.join();
+            }
         }
     };
 
-    class thread_pool
+    class thread_pool final
     {
     private:
         std::vector<thread_pool_worker> workers_{};
@@ -252,15 +306,29 @@ namespace txl
             workers_.resize(num_threads);
         }
 
-        auto post_work(std::unique_ptr<thread_pool_work> && c) -> void
+        ~thread_pool()
         {
-            auto index = next_thread_index_.fetch_add(1);
-            if (index == workers_.size())
+            stop_workers();
+        }
+
+        auto post_work(std::unique_ptr<thread_pool_work> && c) -> bool
+        {
+            auto index = next_thread_index_.fetch_add(1, std::memory_order_acq_rel);
+            if (index >= workers_.size())
             {
-                next_thread_index_.store(0, std::memory_order_seq_cst);
+                next_thread_index_.store(0, std::memory_order_release);
                 index = 0;
             }
-            workers_[index].post(std::move(c));
+            return workers_[index].post(std::move(c));
+        }
+
+        auto wait_for_idle() -> void
+        {
+            // Wait for all thread workers to complete their work
+            for (auto & w : workers_)
+            {
+                w.wait_for_idle();
+            }
         }
 
         auto start_workers() -> void

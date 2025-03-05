@@ -39,11 +39,11 @@ namespace txl
             }
         }
     public:
-        using value_type = std::iterator_traits<Iter>::value_type;
-        using reference = std::iterator_traits<Iter>::reference;
-        using pointer = std::iterator_traits<Iter>::pointer;
-        using difference_type = std::iterator_traits<Iter>::difference_type;
-        using iterator_category = std::iterator_traits<Iter>::iterator_category;
+        using value_type = typename std::iterator_traits<Iter>::value_type;
+        using reference = typename std::iterator_traits<Iter>::reference;
+        using pointer = typename std::iterator_traits<Iter>::pointer;
+        using difference_type = typename std::iterator_traits<Iter>::difference_type;
+        using iterator_category = typename std::iterator_traits<Iter>::iterator_category;
 
         template<class It>
         circular_iterator(It begin, It end)
