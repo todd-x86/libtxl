@@ -52,22 +52,28 @@ TXL_UNIT_TEST(thread_pool_simple)
     auto c = std::atomic_int{0};
     {
         auto tp = txl::thread_pool{2};
-        tp.post_work(txl::make_thread_pool_lambda([&c]() {
+        auto added = tp.post_work(txl::make_thread_pool_lambda([&c]() {
             c.fetch_add(1);
         }));
+        assert_true(added);
     }
     // We didn't run, so assume no changes
     assert_equal(c.load(), 0);
     
     {
         auto tp = txl::thread_pool{2};
-        tp.post_work(txl::make_thread_pool_lambda([&c]() {
+        auto added = tp.post_work(txl::make_thread_pool_lambda([&c]() {
             c.fetch_add(1);
         }));
+        assert_true(added);
+
         tp.start_workers();
-        tp.post_work(txl::make_thread_pool_lambda([&c]() {
+        
+        added = tp.post_work(txl::make_thread_pool_lambda([&c]() {
             c.fetch_add(1);
         }));
+        assert_true(added);
+
         tp.wait_for_idle();
     }
     assert_equal(c.load(), 2);

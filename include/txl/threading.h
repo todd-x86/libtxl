@@ -192,6 +192,7 @@ namespace txl
             while (not stopped_.load(std::memory_order_relaxed) and pending_.empty())
             {
                 // Notify that we're in an idle state now
+                idle_awaiter_.reset();
                 idle_awaiter_.notify_all();
 
                 auto lock = std::unique_lock<std::mutex>{pending_waiter_->mut_};
@@ -212,6 +213,7 @@ namespace txl
         thread_pool_worker()
             : pending_waiter_(std::make_unique<pending_waiter>())
         {
+            stopped_.store(false, std::memory_order_release);
         }
 
         thread_pool_worker(thread_pool_worker const &) = delete;
@@ -248,6 +250,7 @@ namespace txl
 
         auto wait_for_idle() -> void
         {
+            // TODO: fix potential race condition (we can get notified after we inspected above)
             idle_awaiter_.wait();
         }
 
