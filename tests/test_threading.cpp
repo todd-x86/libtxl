@@ -59,24 +59,49 @@ TXL_UNIT_TEST(thread_pool_simple)
     }
     // We didn't run, so assume no changes
     assert_equal(c.load(), 0);
-    
+}
+
+TXL_UNIT_TEST(thread_pool_work)
+{
+    auto c = std::atomic_int{0};
     {
         auto tp = txl::thread_pool{2};
         auto added = tp.post_work(txl::make_thread_pool_lambda([&c]() {
             c.fetch_add(1);
         }));
         assert_true(added);
-
-        tp.start_workers();
         
         added = tp.post_work(txl::make_thread_pool_lambda([&c]() {
             c.fetch_add(1);
         }));
         assert_true(added);
+        tp.start_workers();
 
         tp.wait_for_idle();
     }
     assert_equal(c.load(), 2);
+}
+
+TXL_UNIT_TEST(thread_pool_complete_work)
+{
+    auto c = std::atomic_int{0};
+    
+    auto tp = txl::thread_pool{2};
+
+    for (auto i = 0; i < 1000; ++i)
+    {
+        auto added = tp.post_work(txl::make_thread_pool_lambda([&c]() {
+            c.fetch_add(1);
+        }));
+        assert_true(added);
+    }
+    tp.start_workers();
+    
+    //std::this_thread::sleep_for(std::chrono::seconds(1));
+    tp.wait_for_idle();
+    tp.stop_workers();
+    
+    assert_equal(c.load(), 1000);
 }
 
 TXL_RUN_TESTS()
