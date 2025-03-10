@@ -16,12 +16,9 @@ TXL_UNIT_TEST(atomic_linked_list_push_pop)
     l.emplace_back(2);
     l.emplace_back(3);
     assert_false(l.empty());
-    assert_equal(l.front(), 1);
-    l.pop_front();
-    assert_equal(l.front(), 2);
-    l.pop_front();
-    assert_equal(l.front(), 3);
-    l.pop_front();
+    assert_equal(*l.pop_and_release_front(), 1);
+    assert_equal(*l.pop_and_release_front(), 2);
+    assert_equal(*l.pop_and_release_front(), 3);
     assert_true(l.empty());
 }
 
@@ -44,14 +41,15 @@ TXL_UNIT_TEST(atomic_linked_list_free)
     l.emplace_back();
     assert_equal(num_deletes, 0);
     assert_false(l.empty());
-    l.pop_front();
-    assert_equal(num_deletes, 1);
-    l.pop_front();
-    assert_equal(num_deletes, 2);
-    l.pop_front();
-    assert_equal(num_deletes, 3);
-    l.pop_front();
-    assert_equal(num_deletes, 3);
+    // pop_and_release_front() can destruct 3 instances (1 for empty node destruction, 1 for moving into optional, 1 for destructing the optional below (RAII))
+    l.pop_and_release_front();
+    assert_equal(num_deletes, 1*3);
+    l.pop_and_release_front();
+    assert_equal(num_deletes, 2*3);
+    l.pop_and_release_front();
+    assert_equal(num_deletes, 3*3);
+    l.pop_and_release_front();
+    assert_equal(num_deletes, 3*3);
     assert_true(l.empty());
 }
 
@@ -60,9 +58,7 @@ TXL_UNIT_TEST(atomic_linked_list_move)
     auto l = txl::atomic_linked_list<std::string>{};
     l.emplace_back("Hello World No Small String Optimization Here");
     assert_false(l.empty());
-    auto s = std::move(l.front());
-    assert_false(l.empty());
-    l.pop_front();
+    auto s = std::move(*l.pop_and_release_front());
     assert_true(l.empty());
     assert_equal(s, "Hello World No Small String Optimization Here");
 }
@@ -82,8 +78,7 @@ TXL_UNIT_TEST(atomic_linked_list_add_lots)
     {
         ss.str("");
         ss << "Hello from the following number: " << i;
-        assert_equal(l.front(), ss.str());
-        l.pop_front();
+        assert_equal(*l.pop_and_release_front(), ss.str());
     }
     assert_true(l.empty());
 }
