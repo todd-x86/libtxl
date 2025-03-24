@@ -8,9 +8,11 @@ namespace txl
     class iterator_view
     {
     private:
-        Iter begin_;
-        Iter end_;
+        Iter begin_{};
+        Iter end_{};
     public:
+        iterator_view() noexcept = default;
+
         template<class CIter>
         iterator_view(CIter begin, CIter end) noexcept
             : begin_(begin)

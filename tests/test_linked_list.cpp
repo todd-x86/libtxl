@@ -1,5 +1,6 @@
 #include <txl/unit_test.h>
 #include <txl/linked_list.h>
+#include <txl/threading.h>
 
 #include <sstream>
 
@@ -81,6 +82,44 @@ TXL_UNIT_TEST(atomic_linked_list_add_lots)
         assert_equal(*l.pop_and_release_front(), ss.str());
     }
     assert_true(l.empty());
+}
+
+TXL_UNIT_TEST(atomic_linked_list_concurrency)
+{
+    auto l = txl::atomic_linked_list<std::string>{};
+    auto a = txl::awaiter{};
+    std::atomic<int> counter = 0;
+
+    auto add_n = [&](int n) {
+        return [&]() {
+            a.wait();
+            for (auto i = 0; i < n; ++i)
+            {
+                l.emplace_back("Complicated");
+            }
+        };
+    };
+
+    auto pop_n = [&](int n) {
+        return [&]() {
+            a.wait();
+            for (auto i = 0; i < n; ++i)
+            {
+                auto el = l.pop_and_release_front();
+                if (el and *el == "Complicated")
+                {
+                    counter.fetch_add(1, std::memory_order_release);
+                }
+            }
+        };
+    };
+
+    std::thread t1{add_n(50)}, t2{pop_n(50)}, t3{add_n(100)}, t4{pop_n(100)};
+    a.notify_all();
+    t1.join();
+    t2.join();
+    t3.join();
+    t4.join();
 }
 
 TXL_RUN_TESTS()

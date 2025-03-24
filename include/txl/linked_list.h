@@ -16,6 +16,7 @@ namespace txl
         {
             alignas(Value) std::byte value_[sizeof(Value)];
             node * next_;
+            char pad_[64];
 
             ~node()
             {
@@ -29,6 +30,7 @@ namespace txl
         struct list_data final
         {
             std::atomic<node *> head_;
+            char pad_[64];
             std::atomic<node *> tail_;
 
             list_data()
@@ -56,7 +58,7 @@ namespace txl
 
             while (true)
             {
-                auto head = data->head_.load(std::memory_order_acquire);
+                auto head = data->head_.load(std::memory_order_relaxed);
                 if (head == nullptr)
                 {
                     return;
@@ -64,7 +66,7 @@ namespace txl
 
                 auto old_head = head;
                 auto next = head->next_;
-                if (data->head_.compare_exchange_weak(head, next, std::memory_order_acq_rel))
+                if (data->head_.compare_exchange_weak(head, next, std::memory_order_relaxed))
                 {
                     delete old_head;
                 }
@@ -133,6 +135,11 @@ namespace txl
             auto data = data_.load(std::memory_order_acquire);
             return data == nullptr or data->tail_.load(std::memory_order_acquire) == nullptr;
         }
+        
+        auto push_back(Value const & v) -> Value &
+        {
+            return emplace_back(v);
+        }
 
         template<class... Args>
         auto emplace_back(Args && ... args) -> Value &
@@ -140,14 +147,14 @@ namespace txl
             auto n = new node{ .next_ = nullptr };
             new (&n->value_[0]) Value{std::forward<Args>(args)...};
             
-            auto data = data_.load(std::memory_order_acquire);
+            auto data = data_.load(std::memory_order_relaxed);
             assert(data != nullptr);
 
             // Replace or attach to tail
             while (true)
             {
-                auto old_tail = data->tail_.load(std::memory_order_acquire);
-                if (data->tail_.compare_exchange_weak(old_tail, n, std::memory_order_acq_rel))
+                auto old_tail = data->tail_.load(std::memory_order_relaxed);
+                if (data->tail_.compare_exchange_weak(old_tail, n, std::memory_order_release, std::memory_order_relaxed))
                 {
                     if (old_tail)
                     {
@@ -157,20 +164,30 @@ namespace txl
                 }
             }
 
-            // Replace head if empty
             node * head = nullptr;
-            data->head_.compare_exchange_weak(head, n, std::memory_order_acq_rel);
-            return n->val();
+            // Replace head if empty
+            while (true)
+            {
+                if (data->head_.load(std::memory_order_relaxed))
+                {
+                    return n->val();
+                }
+                head = nullptr;
+                if (data->head_.compare_exchange_weak(head, n, std::memory_order_release, std::memory_order_relaxed))
+                {
+                    return n->val();
+                }
+            }
         }
         
         auto pop_and_release_front() -> std::optional<Value>
         {
-            auto data = data_.load(std::memory_order_acquire);
+            auto data = data_.load(std::memory_order_relaxed);
             assert(data != nullptr);
 
             while (true)
             {
-                auto head = data->head_.load(std::memory_order_acquire);
+                auto head = data->head_.load(std::memory_order_relaxed);
                 if (head == nullptr)
                 {
                     return {};
@@ -178,7 +195,7 @@ namespace txl
 
                 auto old_head = head;
                 auto next = head->next_;
-                if (data->head_.compare_exchange_weak(head, next, std::memory_order_acq_rel))
+                if (data->head_.compare_exchange_weak(head, next, std::memory_order_release, std::memory_order_relaxed))
                 {
                     // Move tail forward if the head is the same as the tail
                     head = old_head;

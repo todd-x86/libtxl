@@ -87,21 +87,20 @@ TXL_UNIT_TEST(thread_pool_complete_work)
     auto c = std::atomic_int{0};
     
     auto tp = txl::thread_pool{2};
+    tp.start_workers();
 
-    for (auto i = 0; i < 1000; ++i)
+    for (auto i = 0; i < 10000; ++i)
     {
         auto added = tp.post_work(txl::make_thread_pool_lambda([&c]() {
             c.fetch_add(1);
         }));
         assert_true(added);
     }
-    tp.start_workers();
     
-    //std::this_thread::sleep_for(std::chrono::seconds(1));
     tp.wait_for_idle();
     tp.stop_workers();
     
-    assert_equal(c.load(), 1000);
+    assert_equal(c.load(), 10000);
 }
 
 TXL_RUN_TESTS()
