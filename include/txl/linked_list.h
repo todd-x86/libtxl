@@ -16,6 +16,7 @@ namespace txl
         {
             alignas(Value) std::byte value_[sizeof(Value)];
             node * next_;
+            char pad_[64];
             uint8_t canary_ = 123;
 
             node(node const &) = delete;
@@ -44,34 +45,81 @@ namespace txl
             auto val() -> Value & { return *reinterpret_cast<Value *>(&value_[0]); }
         };
 
-        auto replace_head(node * n) -> void
+        auto replace_head(node * n) -> node *
         {
-            node * head = nullptr;
-            do
-            {
-                head = head_.load(std::memory_order_relaxed);
-                if (head != nullptr)
-                {
-                    break;
-                }
-            }
-            while (not head_.compare_exchange_weak(head, n, std::memory_order_release, std::memory_order_relaxed));
+            return atomic_swap_if(head_, n, [](auto node) { return node == nullptr; });
         }
 
-        auto replace_tail(node * n) -> void
+        auto replace_tail(node * n) -> node *
         {
-            node * tail = nullptr;
-            do
-            {
-                tail = tail_.load(std::memory_order_relaxed);
-            }
-            while (not tail_.compare_exchange_weak(tail, n, std::memory_order_release, std::memory_order_relaxed));
-
+            auto * tail = atomic_swap(tail_, n);
             if (tail)
             {
                 tail->next_ = n;
             }
+            return tail;
         }
+
+        template<class T>
+        static auto atomic_swap(std::atomic<T> & value, T new_value) -> T
+        {
+            auto old_value = T{};
+            do
+            {
+                old_value = value.load(std::memory_order_relaxed);
+            }
+            while (not value.compare_exchange_weak(old_value, new_value, std::memory_order_release, std::memory_order_relaxed));
+            return old_value;
+        }
+        
+        template<class T, class Func>
+        static auto atomic_swap(std::atomic<T> & value, Func && new_value_factory) -> T
+        {
+            auto old_value = T{};
+            auto new_value = T{};
+            do
+            {
+                old_value = value.load(std::memory_order_relaxed);
+                new_value = new_value_factory(old_value);
+            }
+            while (not value.compare_exchange_weak(old_value, new_value, std::memory_order_release, std::memory_order_relaxed));
+            return old_value;
+        }
+        
+        template<class T, class Func>
+        static auto atomic_swap_if(std::atomic<T> & value, T new_value, Func && cond) -> T
+        {
+            auto old_value = T{};
+            do
+            {
+                old_value = value.load(std::memory_order_relaxed);
+                if (not cond(old_value))
+                {
+                    break;
+                }
+            }
+            while (not value.compare_exchange_weak(old_value, new_value, std::memory_order_release, std::memory_order_relaxed));
+            return old_value;
+        }
+        
+        template<class T, class FactoryFunc, class ConditionFunc>
+        static auto atomic_swap_if(std::atomic<T> & value, FactoryFunc && new_value_factory, ConditionFunc && cond) -> T
+        {
+            auto old_value = T{};
+            auto new_value = T{};
+            do
+            {
+                old_value = value.load(std::memory_order_relaxed);
+                if (not cond(old_value))
+                {
+                    break;
+                }
+                new_value = new_value_factory(old_value);
+            }
+            while (not value.compare_exchange_weak(old_value, new_value, std::memory_order_release, std::memory_order_relaxed));
+            return old_value;
+        }
+
 
         std::atomic<node *> head_;
         std::atomic<node *> tail_;
@@ -114,6 +162,14 @@ namespace txl
 
         auto clear() -> void
         {
+            replace_tail(nullptr);
+            auto old_head = replace_head(nullptr);
+            while (old_head)
+            {
+                auto next = old_head->next_;
+                delete old_head;
+                old_head = next;
+            }
         }
 
         auto empty() const -> bool
@@ -130,11 +186,11 @@ namespace txl
         auto emplace_back(Args && ... args) -> Value &
         {
             auto n = new node{ .next_ = nullptr, .canary_ = 123 };
-            printf("NEW: %p\n", n);
+            //printf("NEW: %p\n", n);
             new (&n->value_[0]) Value{std::forward<Args>(args)...};
             
-            replace_head(n);
             replace_tail(n);
+            replace_head(n);
             
             num_inserts_.fetch_add(1, std::memory_order_relaxed);
 
@@ -144,19 +200,15 @@ namespace txl
         
         auto pop_and_release_front() -> std::optional<Value>
         {
-            auto head = head_.load(std::memory_order_relaxed);
-            while (head)
+            auto old_head = atomic_swap_if(head_, [](auto h) { return h->next_; }, [](auto h) { return h != nullptr; });
+            if (old_head)
             {
-                if (head_.compare_exchange_weak(head, head->next_, std::memory_order_release, std::memory_order_relaxed))
-                {
-                    head->canary_check();
-                    auto res = std::make_optional<Value>(std::move(head->val()));
-                    num_pops_.fetch_add(1, std::memory_order_relaxed);
-                    printf("DEL: %p\n", head);
-                    delete head;
-                    return res;
-                }
-                head = head_.load(std::memory_order_relaxed);
+                old_head->canary_check();
+                auto res = std::make_optional<Value>(std::move(old_head->val()));
+                num_pops_.fetch_add(1, std::memory_order_relaxed);
+                //printf("DEL: %p\n", old_head);
+                delete old_head;
+                return res;
             }
             return {};
         }
