@@ -160,6 +160,8 @@ namespace txl
     class thread_pool_worker final
     {
     private:
+        using thread_work_list = atomic_linked_list<std::unique_ptr<thread_pool_work>>;
+
         struct pending_waiter final
         {
             std::condition_variable cond_;
@@ -168,7 +170,7 @@ namespace txl
         awaiter & idle_awaiter_;
         std::atomic<size_t> & job_counter_;
         std::thread thread_;
-        atomic_linked_list<std::unique_ptr<thread_pool_work>> pending_;
+        std::unique_ptr<thread_work_list> pending_;
         std::unique_ptr<pending_waiter> pending_waiter_;
         std::atomic_bool stopped_;
 
@@ -183,7 +185,7 @@ namespace txl
         {
             while (not stopped_.load(std::memory_order_relaxed))
             {
-                auto w = pending_.pop_and_release_front();
+                auto w = pending_->pop_and_release_front();
                 if (w)
                 {
                     auto work = std::move(*w);
@@ -218,6 +220,7 @@ namespace txl
         thread_pool_worker(awaiter & idle_awaiter, std::atomic<size_t> & job_counter)
             : idle_awaiter_(idle_awaiter)
             , job_counter_(job_counter)
+            , pending_(std::make_unique<thread_work_list>())
             , pending_waiter_(std::make_unique<pending_waiter>())
         {
             stopped_.store(false, std::memory_order_release);
@@ -267,7 +270,7 @@ namespace txl
                 return false;
             }
 
-            pending_.emplace_back(std::move(c));
+            pending_->emplace_back(std::move(c));
             pending_waiter_->cond_.notify_one();
             return true;
         }

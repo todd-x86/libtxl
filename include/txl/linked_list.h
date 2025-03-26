@@ -16,86 +16,73 @@ namespace txl
         {
             alignas(Value) std::byte value_[sizeof(Value)];
             node * next_;
-            char pad_[64];
+            uint8_t canary_ = 123;
+
+            node(node const &) = delete;
+            node(node &&) = delete;
 
             ~node()
             {
+                canary_ = 0;
                 val().~Value();
+            }
+
+            auto operator=(node const &) -> node & = delete;
+            auto operator=(node &&) -> node & = delete;
+
+            auto canary_check() const
+            {
+                if (canary_ != 123)
+                {
+                    std::ostringstream ss;
+                    ss << "Heap after use: " << static_cast<void const *>(this) << "\n";
+                    throw std::runtime_error{ss.str()};
+                }
             }
 
             auto val() const -> Value const & { return *reinterpret_cast<Value const *>(&value_[0]); }
             auto val() -> Value & { return *reinterpret_cast<Value *>(&value_[0]); }
         };
 
-        struct list_data final
+        auto replace_head(node * n) -> void
         {
-            std::atomic<node *> head_;
-            char pad_[64];
-            std::atomic<node *> tail_;
-
-            list_data()
-                : head_{nullptr}
-                , tail_{nullptr}
+            node * head = nullptr;
+            do
             {
+                head = head_.load(std::memory_order_relaxed);
+                if (head != nullptr)
+                {
+                    break;
+                }
             }
-        };
+            while (not head_.compare_exchange_weak(head, n, std::memory_order_release, std::memory_order_relaxed));
+        }
 
-        std::atomic<list_data *> data_;
-        
-        auto swap_and_clear(list_data * data) -> void
+        auto replace_tail(node * n) -> void
         {
-            data = data_.exchange(data, std::memory_order_acq_rel);
-            if (data == nullptr)
+            node * tail = nullptr;
+            do
             {
-                return;
+                tail = tail_.load(std::memory_order_relaxed);
             }
+            while (not tail_.compare_exchange_weak(tail, n, std::memory_order_release, std::memory_order_relaxed));
 
-            auto _ = on_exit{[data]() {
-                delete data;
-            }};
-            
-            assert(data != nullptr);
-
-            while (true)
+            if (tail)
             {
-                auto head = data->head_.load(std::memory_order_relaxed);
-                if (head == nullptr)
-                {
-                    return;
-                }
-
-                auto old_head = head;
-                auto next = head->next_;
-                if (data->head_.compare_exchange_weak(head, next, std::memory_order_relaxed))
-                {
-                    delete old_head;
-                }
+                tail->next_ = n;
             }
         }
-    
-        template<class T>
-        inline auto unsafe_swap_atomics(std::atomic<T> & x, std::atomic<T> & y) -> void
-        {
-            // NOTE: This is not a literal atomic swap between two atomics.
-            // We can't guarantee two exchanges are atomic, but we can swap
-            // and ensure the best case is they do not race.
-            while (true)
-            {
-                auto prev_x = x.load(std::memory_order_acquire);
-                auto prev_y = y.load(std::memory_order_acquire);
-                if (x.compare_exchange_weak(prev_x, prev_y, std::memory_order_acq_rel))
-                {
-                    while (not y.compare_exchange_weak(prev_y, prev_x, std::memory_order_acq_rel))
-                    {
-                        prev_y = y.load(std::memory_order_acquire);
-                    }
-                    return;
-                }
-            }
-        }
+
+        std::atomic<node *> head_;
+        std::atomic<node *> tail_;
+        std::atomic<size_t> num_inserts_;
+        std::atomic<size_t> num_pops_;
     public:
         atomic_linked_list()
-            : data_{new list_data{}}
+            : head_{nullptr}
+            , tail_{nullptr}
+            , num_inserts_{0}
+            , num_pops_{0}
         {
         }
 
@@ -103,37 +90,35 @@ namespace txl
         atomic_linked_list(atomic_linked_list const &) = delete;
 
         atomic_linked_list(atomic_linked_list && a)
-            : atomic_linked_list()
+            : tail_()
         {
-            unsafe_swap_atomics(data_, a.data_);
         }
 
         ~atomic_linked_list()
         {
-            swap_and_clear(nullptr);
+            clear();
         }
         
         auto operator=(atomic_linked_list const &) -> atomic_linked_list & = delete;
+        auto operator=(atomic_linked_list && a) -> atomic_linked_list & = delete;
 
-        auto operator=(atomic_linked_list && a) -> atomic_linked_list &
+        auto num_inserts() const -> size_t
         {
-            if (this != &a)
-            {
-                clear();
-                unsafe_swap_atomics(data_, a.data_);
-            }
-            return *this;
+            return num_inserts_.load(std::memory_order_relaxed);
+        }
+        
+        auto num_pops() const -> size_t
+        {
+            return num_pops_.load(std::memory_order_relaxed);
         }
 
         auto clear() -> void
         {
-            swap_and_clear(new list_data{});
         }
 
         auto empty() const -> bool
         {
-            auto data = data_.load(std::memory_order_acquire);
-            return data == nullptr or data->tail_.load(std::memory_order_acquire) == nullptr;
+            return head_.load(std::memory_order_relaxed) == nullptr;
         }
         
         auto push_back(Value const & v) -> Value &
@@ -144,68 +129,36 @@ namespace txl
         template<class... Args>
         auto emplace_back(Args && ... args) -> Value &
         {
-            auto n = new node{ .next_ = nullptr };
+            auto n = new node{ .next_ = nullptr, .canary_ = 123 };
+            printf("NEW: %p\n", n);
             new (&n->value_[0]) Value{std::forward<Args>(args)...};
             
-            auto data = data_.load(std::memory_order_relaxed);
-            assert(data != nullptr);
+            replace_head(n);
+            replace_tail(n);
+            
+            num_inserts_.fetch_add(1, std::memory_order_relaxed);
 
-            // Replace or attach to tail
-            while (true)
-            {
-                auto old_tail = data->tail_.load(std::memory_order_relaxed);
-                if (data->tail_.compare_exchange_weak(old_tail, n, std::memory_order_release, std::memory_order_relaxed))
-                {
-                    if (old_tail)
-                    {
-                        old_tail->next_ = n;
-                    }
-                    break;
-                }
-            }
-
-            node * head = nullptr;
-            // Replace head if empty
-            while (true)
-            {
-                if (data->head_.load(std::memory_order_relaxed))
-                {
-                    return n->val();
-                }
-                head = nullptr;
-                if (data->head_.compare_exchange_weak(head, n, std::memory_order_release, std::memory_order_relaxed))
-                {
-                    return n->val();
-                }
-            }
+            n->canary_check();
+            return n->val();
         }
         
         auto pop_and_release_front() -> std::optional<Value>
         {
-            auto data = data_.load(std::memory_order_relaxed);
-            assert(data != nullptr);
-
-            while (true)
+            auto head = head_.load(std::memory_order_relaxed);
+            while (head)
             {
-                auto head = data->head_.load(std::memory_order_relaxed);
-                if (head == nullptr)
+                if (head_.compare_exchange_weak(head, head->next_, std::memory_order_release, std::memory_order_relaxed))
                 {
-                    return {};
-                }
-
-                auto old_head = head;
-                auto next = head->next_;
-                if (data->head_.compare_exchange_weak(head, next, std::memory_order_release, std::memory_order_relaxed))
-                {
-                    // Move tail forward if the head is the same as the tail
-                    head = old_head;
-                    data->tail_.compare_exchange_strong(head, next, std::memory_order_acq_rel);
-
-                    auto res = std::make_optional<Value>(std::move(old_head->val()));
-                    delete old_head;
+                    head->canary_check();
+                    auto res = std::make_optional<Value>(std::move(head->val()));
+                    num_pops_.fetch_add(1, std::memory_order_relaxed);
+                    printf("DEL: %p\n", head);
+                    delete head;
                     return res;
                 }
+                head = head_.load(std::memory_order_relaxed);
             }
+            return {};
         }
     };
 }
