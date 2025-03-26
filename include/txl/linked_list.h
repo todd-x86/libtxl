@@ -16,7 +16,6 @@ namespace txl
         {
             alignas(Value) std::byte value_[sizeof(Value)];
             node * next_;
-            char pad_[64];
             uint8_t canary_ = 123;
 
             node(node const &) = delete;
@@ -45,14 +44,37 @@ namespace txl
             auto val() -> Value & { return *reinterpret_cast<Value *>(&value_[0]); }
         };
 
+        struct head_tail final
+        {
+            node * head_ = nullptr;
+            node * tail_ = nullptr;
+
+            auto with_head(node * h) const -> head_tail
+            {
+                return { .head_ = h, .tail_ = tail_ };
+            }
+
+            auto with_tail(node * t) const -> head_tail
+            {
+                return { .head_ = head_, .tail_ = t };
+            }
+
+            auto next_head() const -> head_tail
+            {
+                return with_head(head_->next_);
+            }
+        };
+
         auto replace_head(node * n) -> node *
         {
-            return atomic_swap_if(head_, n, [](auto node) { return node == nullptr; });
+            auto old_root = atomic_swap_if(root_, [n](auto root) { return root.with_head(n); }, [](auto root) { return root.head_ == nullptr; });
+            return old_root.head_;
         }
 
         auto replace_tail(node * n) -> node *
         {
-            auto * tail = atomic_swap(tail_, n);
+            auto old_root = atomic_swap(root_, [n](auto root) { return root.with_tail(n); });
+            auto tail = old_root.tail_;
             if (tail)
             {
                 tail->next_ = n;
@@ -120,15 +142,12 @@ namespace txl
             return old_value;
         }
 
-
-        std::atomic<node *> head_;
-        std::atomic<node *> tail_;
+        std::atomic<head_tail> root_;
         std::atomic<size_t> num_inserts_;
         std::atomic<size_t> num_pops_;
     public:
         atomic_linked_list()
-            : head_{nullptr}
-            , tail_{nullptr}
+            : root_{head_tail{}}
             , num_inserts_{0}
             , num_pops_{0}
         {
@@ -138,7 +157,6 @@ namespace txl
         atomic_linked_list(atomic_linked_list const &) = delete;
 
         atomic_linked_list(atomic_linked_list && a)
-            : tail_()
         {
         }
 
@@ -174,7 +192,8 @@ namespace txl
 
         auto empty() const -> bool
         {
-            return head_.load(std::memory_order_relaxed) == nullptr;
+            auto root = root_.load(std::memory_order_relaxed);
+            return root.head_ == nullptr;
         }
         
         auto push_back(Value const & v) -> Value &
@@ -200,7 +219,8 @@ namespace txl
         
         auto pop_and_release_front() -> std::optional<Value>
         {
-            auto old_head = atomic_swap_if(head_, [](auto h) { return h->next_; }, [](auto h) { return h != nullptr; });
+            auto old_root = atomic_swap_if(root_, [](auto root) { return root.next_head(); }, [](auto root) { return root.head_ != nullptr; });
+            auto old_head = old_root.head_;
             if (old_head)
             {
                 old_head->canary_check();
