@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <iostream>
 #include <atomic>
+#include <string>
 #include <string_view>
 #include <cstddef>
 
@@ -35,7 +36,6 @@ namespace txl
 
             auto inc(size_t s) -> void
             {
-                // TODO: something better here...
                 offset_ += s;
             }
 
@@ -63,9 +63,9 @@ namespace txl
         struct file_cursor_data final
         {
             cursor_data head_;
-            char pad1_[64]; //std::hardware_constructive_interference_size];
+            char pad1_[64];
             cursor_data tail_;
-            char pad2_[64]; //std::hardware_constructive_interference_size];
+            char pad2_[64];
         };
     private:
         struct entry_data final
@@ -133,18 +133,18 @@ namespace txl
         {
         }
         
-        ring_buffer_file(std::string_view filename, open_mode mode, size_t max_size)
+        ring_buffer_file(std::string const & filename, open_mode mode, size_t max_size)
             : ring_buffer_file(filename, mode, max_size, max_size >> 1)
         {
         }
 
-        ring_buffer_file(std::string_view filename, open_mode mode, size_t max_size, size_t ring_size)
+        ring_buffer_file(std::string const & filename, open_mode mode, size_t max_size, size_t ring_size)
             : ring_buffer_file(max_size, ring_size)
         {
             open(filename, mode).or_throw();
         }
 
-        auto open(std::string_view filename, open_mode mode) -> result<void>
+        auto open(std::string const & filename, open_mode mode) -> result<void>
         {
             auto str_mode = "w+";
             auto mm_mode = memory_map::read | memory_map::write;
@@ -250,7 +250,6 @@ namespace txl
                 
                 // Mark it empty
                 e->size_ = 0;
-                //buffer_ref{e, s}.fill(static_cast<std::byte>('\0'));
                 cur_.head_.inc(s);
             }
 
@@ -298,13 +297,11 @@ namespace txl
 
     inline auto operator<<(std::ostream & os, ring_buffer_file::cursor_data const & c) -> std::ostream &
     {
-        //os << "(O=" << c.offset_ << ", C=" << c.cycle_ << ")";
         os << "(O=" << c.offset_ << ")";
         return os;
     }
     inline auto operator<<(std::ostream & os, ring_buffer_file::file_cursor_data const & c) -> std::ostream &
     {
-        //os << "H=" << c.head_ << " | T=" << c.tail_;
         os << "H=" << c.head_ << " | T=" << c.tail_ << " (d=" << c.head_.distance(c.tail_) << ")";
         return os;
     }

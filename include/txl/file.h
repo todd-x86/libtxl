@@ -8,6 +8,7 @@
 #include <txl/result.h>
 #include <txl/handle_error.h>
 
+#include <string>
 #include <string_view>
 
 #include <fcntl.h>
@@ -70,7 +71,7 @@ namespace txl
         };
 
         file() = default;
-        file(std::string_view filename, std::string_view mode)
+        file(std::string const & filename, std::string_view mode)
             : file()
         {
             open(filename, mode).or_throw();
@@ -79,7 +80,7 @@ namespace txl
         file(file const &) = delete;
         file(file && f) = default;
 
-        auto open(std::string_view filename, std::string_view mode) -> result<void>
+        auto open(std::string const & filename, std::string_view mode) -> result<void>
         {
             static constexpr const int DEFAULT_FILE_PERMS = S_IRUSR | S_IWUSR | S_IRGRP;
 
@@ -95,7 +96,7 @@ namespace txl
                 return file_mode.error();
             }
 
-            fd_ = ::open(filename.data(), *file_mode, DEFAULT_FILE_PERMS);
+            fd_ = ::open(filename.c_str(), *file_mode, DEFAULT_FILE_PERMS);
             return handle_system_error(fd_);
         }
 

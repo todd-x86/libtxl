@@ -1,6 +1,6 @@
 #pragma once
 
-#include <txl/on_exit.h>
+#include <txl/atomic.h>
 
 #include <atomic>
 #include <cassert>
@@ -51,74 +51,14 @@ namespace txl
 
         auto replace_tail(node * n) -> node *
         {
-            auto * tail = atomic_swap(tail_, n);
-            if (tail)
-            {
-                tail->next_ = n;
-            }
-            return tail;
-        }
-
-        template<class T>
-        static auto atomic_swap(std::atomic<T> & value, T new_value) -> T
-        {
-            auto old_value = T{};
-            do
-            {
-                old_value = value.load(std::memory_order_relaxed);
-            }
-            while (not value.compare_exchange_weak(old_value, new_value, std::memory_order_release, std::memory_order_relaxed));
-            return old_value;
-        }
-        
-        template<class T, class Func>
-        static auto atomic_swap(std::atomic<T> & value, Func && new_value_factory) -> T
-        {
-            auto old_value = T{};
-            auto new_value = T{};
-            do
-            {
-                old_value = value.load(std::memory_order_relaxed);
-                new_value = new_value_factory(old_value);
-            }
-            while (not value.compare_exchange_weak(old_value, new_value, std::memory_order_release, std::memory_order_relaxed));
-            return old_value;
-        }
-        
-        template<class T, class Func>
-        static auto atomic_swap_if(std::atomic<T> & value, T new_value, Func && cond) -> T
-        {
-            auto old_value = T{};
-            do
-            {
-                old_value = value.load(std::memory_order_relaxed);
-                if (not cond(old_value))
+            return atomic_swap(tail_, [n](auto tail) {
+                if (tail)
                 {
-                    break;
+                    tail->next_ = n;
                 }
-            }
-            while (not value.compare_exchange_weak(old_value, new_value, std::memory_order_release, std::memory_order_relaxed));
-            return old_value;
+                return n;
+            });
         }
-        
-        template<class T, class FactoryFunc, class ConditionFunc>
-        static auto atomic_swap_if(std::atomic<T> & value, FactoryFunc && new_value_factory, ConditionFunc && cond) -> T
-        {
-            auto old_value = T{};
-            auto new_value = T{};
-            do
-            {
-                old_value = value.load(std::memory_order_relaxed);
-                if (not cond(old_value))
-                {
-                    break;
-                }
-                new_value = new_value_factory(old_value);
-            }
-            while (not value.compare_exchange_weak(old_value, new_value, std::memory_order_release, std::memory_order_relaxed));
-            return old_value;
-        }
-
 
         std::atomic<node *> head_;
         std::atomic<node *> tail_;
@@ -135,11 +75,7 @@ namespace txl
 
         // Copying a list is an expensive operation that requires locking the entire list until we're done copying
         atomic_linked_list(atomic_linked_list const &) = delete;
-
-        atomic_linked_list(atomic_linked_list && a)
-            : tail_()
-        {
-        }
+        atomic_linked_list(atomic_linked_list &&) = delete;
 
         ~atomic_linked_list()
         {
@@ -202,6 +138,7 @@ namespace txl
             auto old_head = atomic_swap_if(head_, [](auto h) { return h->next_; }, [](auto h) { return h != nullptr; });
             if (old_head)
             {
+                atomic_swap_if(tail_, [](auto t) { return t->next_; }, [old_head](auto t) { return old_head == t; });
                 old_head->canary_check();
                 auto res = std::make_optional<Value>(std::move(old_head->val()));
                 num_pops_.fetch_add(1, std::memory_order_relaxed);
