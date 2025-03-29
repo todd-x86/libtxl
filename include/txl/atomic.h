@@ -63,4 +63,32 @@ namespace txl
         while (not value.compare_exchange_weak(old_value, new_value, std::memory_order_release, std::memory_order_relaxed));
         return old_value;
     }
+
+    template<class T>
+    class acquire_lock final
+    {
+    private:
+        std::atomic<T> & atom_;
+        T value_;
+    public:
+        acquire_lock(std::atomic<T> & value)
+            : atom_{value}
+            , value_{value.load(std::memory_order_acquire)}
+        {
+        }
+
+        ~acquire_lock()
+        {
+            atom_.store(value_, std::memory_order_release);
+        }
+        
+        T & value() { return value_; }
+        T const & value() const { return value_; }
+
+        T & operator*() { return value_; }
+        T const & operator*() const { return value_; }
+        
+        T * operator->() { return &value_; }
+        T const * operator->() const { return &value_; }
+    };
 }

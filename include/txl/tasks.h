@@ -281,6 +281,7 @@ namespace txl
     template<class ReturnType>
     struct task_function
     {
+        virtual ~task_function() = default;
         virtual auto execute(task_context<ReturnType> & ctx) -> void = 0;
     };
 
