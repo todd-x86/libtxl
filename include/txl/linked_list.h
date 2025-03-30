@@ -26,6 +26,12 @@ namespace txl
                 canary_ = 0;
                 val().~Value();
             }
+            
+            template<class... Args>
+            auto assign(Args && ... args) -> void
+            {
+                new (&value_[0]) Value{std::forward<Args>(args)...};
+            }
 
             auto operator=(node const &) -> node & = delete;
             auto operator=(node &&) -> node & = delete;
@@ -46,12 +52,7 @@ namespace txl
 
         auto replace_head(node * n) -> node *
         {
-            return atomic_swap_if(head_, n, [](auto node) { return node == nullptr; });
-        }
-
-        auto replace_tail(node * n) -> node *
-        {
-            return atomic_swap(tail_, [n](auto tail) {
+            return atomic_swap(head_, [n](auto tail) {
                 if (tail)
                 {
                     tail->next_ = n;
@@ -61,13 +62,11 @@ namespace txl
         }
 
         std::atomic<node *> head_;
-        std::atomic<node *> tail_;
         std::atomic<size_t> num_inserts_;
         std::atomic<size_t> num_pops_;
     public:
         atomic_linked_list()
             : head_{nullptr}
-            , tail_{nullptr}
             , num_inserts_{0}
             , num_pops_{0}
         {
@@ -97,7 +96,6 @@ namespace txl
 
         auto clear() -> void
         {
-            replace_tail(nullptr);
             auto old_head = replace_head(nullptr);
             while (old_head)
             {
@@ -123,27 +121,42 @@ namespace txl
             auto n = new node{ .next_ = nullptr, .canary_ = 123 };
             //printf("NEW: %p\n", n);
             new (&n->value_[0]) Value{std::forward<Args>(args)...};
-            
-            replace_tail(n);
-            replace_head(n);
-            
+
+            node * head = nullptr;
+            do
+            {
+                head = head_.load(std::memory_order_relaxed);
+                n->next_ = head;
+            }
+            while (not head_.compare_exchange_weak(head, n, std::memory_order_release, std::memory_order_relaxed));
+
             num_inserts_.fetch_add(1, std::memory_order_relaxed);
 
-            n->canary_check();
+            //n->canary_check();
             return n->val();
         }
         
         auto pop_and_release_front() -> std::optional<Value>
         {
-            auto old_head = atomic_swap_if(head_, [](auto h) { return h->next_; }, [](auto h) { return h != nullptr; });
-            if (old_head)
+            node * head = nullptr, * next = nullptr;
+            do
             {
-                atomic_swap_if(tail_, [](auto t) { return t->next_; }, [old_head](auto t) { return old_head == t; });
-                old_head->canary_check();
-                auto res = std::make_optional<Value>(std::move(old_head->val()));
+                head = head_.load(std::memory_order_relaxed);
+                if (head)
+                {
+                    next = head->next_;
+                }
+            }
+            while (not head_.compare_exchange_weak(head, next, std::memory_order_release, std::memory_order_relaxed));
+
+            if (head)
+            {
+                //atomic_swap_if(tail_, [](auto t) { return t->next_; }, [old_head](auto t) { return old_head == t; });
+                //head->canary_check();
+                auto res = std::make_optional<Value>(std::move(head->val()));
                 num_pops_.fetch_add(1, std::memory_order_relaxed);
                 //printf("DEL: %p\n", old_head);
-                delete old_head;
+                delete head;
                 return res;
             }
             return {};

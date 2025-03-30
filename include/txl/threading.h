@@ -22,25 +22,28 @@ namespace txl
             std::condition_variable cond_;
             std::mutex mut_;
             // TODO: atomic_flag
-            bool set_ = false;
+            std::atomic_bool set_ = false;
 
             auto reset() -> void
             {
-                set_ = false;
+                set_.store(false, std::memory_order_relaxed);
             }
 
             auto wait() -> void
             {
-                if (not set_)
+                if (not set_.load(std::memory_order_relaxed))
                 {
                     auto lock = std::unique_lock<std::mutex>{mut_};
-                    cond_.wait(lock);
+                    if (not set_.load(std::memory_order_relaxed))
+                    {
+                        cond_.wait(lock);
+                    }
                 }
             }
 
             auto notify_all() -> void
             {
-                set_ = true;
+                set_.store(true, std::memory_order_relaxed);
                 cond_.notify_all();
             }
         };
@@ -207,7 +210,10 @@ namespace txl
 
                 {
                     auto lock = std::unique_lock<std::mutex>{pending_waiter_->mut_};
-                    pending_waiter_->cond_.wait(lock);
+                    if (not stopped_.load(std::memory_order_relaxed))
+                    {
+                        pending_waiter_->cond_.wait(lock);
+                    }
                 }
             }
             // Notify that we're in an idle state now

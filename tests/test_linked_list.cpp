@@ -18,9 +18,9 @@ TXL_UNIT_TEST(atomic_linked_list_push_pop)
     l.emplace_back(2);
     l.emplace_back(3);
     assert_false(l.empty());
-    assert_equal(*l.pop_and_release_front(), 1);
-    assert_equal(*l.pop_and_release_front(), 2);
     assert_equal(*l.pop_and_release_front(), 3);
+    assert_equal(*l.pop_and_release_front(), 2);
+    assert_equal(*l.pop_and_release_front(), 1);
     assert_true(l.empty());
 }
 
@@ -76,7 +76,7 @@ TXL_UNIT_TEST(atomic_linked_list_add_lots)
         l.emplace_back(ss.str());
     }
     
-    for (auto i = 0; i < 10000; ++i)
+    for (auto i = 9999; i >= 0; --i)
     {
         ss.str("");
         ss << "Hello from the following number: " << i;

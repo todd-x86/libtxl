@@ -10,7 +10,7 @@ namespace txl
         auto old_value = T{};
         do
         {
-            old_value = value.load(std::memory_order_relaxed);
+            old_value = value.load(std::memory_order_acquire);
         }
         while (not value.compare_exchange_weak(old_value, new_value, std::memory_order_release, std::memory_order_relaxed));
         return old_value;
@@ -23,7 +23,7 @@ namespace txl
         auto new_value = T{};
         do
         {
-            old_value = value.load(std::memory_order_relaxed);
+            old_value = value.load(std::memory_order_acquire);
             new_value = new_value_factory(old_value);
         }
         while (not value.compare_exchange_weak(old_value, new_value, std::memory_order_release, std::memory_order_relaxed));
@@ -41,6 +41,7 @@ namespace txl
             {
                 break;
             }
+            old_value = value.load(std::memory_order_acquire);
         }
         while (not value.compare_exchange_weak(old_value, new_value, std::memory_order_release, std::memory_order_relaxed));
         return old_value;
@@ -58,6 +59,7 @@ namespace txl
             {
                 break;
             }
+            old_value = value.load(std::memory_order_acquire);
             new_value = new_value_factory(old_value);
         }
         while (not value.compare_exchange_weak(old_value, new_value, std::memory_order_release, std::memory_order_relaxed));
@@ -69,26 +71,31 @@ namespace txl
     {
     private:
         std::atomic<T> & atom_;
-        T value_;
+        T old_value_;
+        T new_value_;
     public:
         acquire_lock(std::atomic<T> & value)
             : atom_{value}
-            , value_{value.load(std::memory_order_acquire)}
+            , old_value_{value.load(std::memory_order_acquire)}
+            , new_value_{old_value_}
         {
         }
 
         ~acquire_lock()
         {
-            atom_.store(value_, std::memory_order_release);
+            if (old_value_ != new_value_)
+            {
+                atom_.compare_exchange_weak(old_value_, new_value_, std::memory_order_release, std::memory_order_relaxed);
+            }
         }
         
-        T & value() { return value_; }
-        T const & value() const { return value_; }
+        T & value() { return new_value_; }
+        T const & value() const { return new_value_; }
 
-        T & operator*() { return value_; }
-        T const & operator*() const { return value_; }
+        T & operator*() { return new_value_; }
+        T const & operator*() const { return new_value_; }
         
-        T * operator->() { return &value_; }
-        T const * operator->() const { return &value_; }
+        T * operator->() { return &new_value_; }
+        T const * operator->() const { return &new_value_; }
     };
 }
