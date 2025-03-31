@@ -72,4 +72,31 @@ TXL_UNIT_TEST(test_try_emplace)
     assert(not emplaced);
 }
 
+TXL_UNIT_TEST(test_emplace_or_update_map)
+{
+    std::map<int, std::string> data{};
+
+    auto it = txl::emplace_or_update(data, 123, "bar");
+    assert(it->first == 123);
+    assert(it->second == "bar");
+    
+    it = txl::emplace_or_update(data, 123, [](auto &) { return "foo"; });
+    assert(it->first == 123);
+    assert(it->second == "foo");
+}
+
+TXL_UNIT_TEST(test_emplace_or_update_unordered_map)
+{
+    std::unordered_map<int, std::string> data{};
+
+    auto it = txl::emplace_or_update(data, 123, [](auto &) { return "bar"; });
+    assert(it->first == 123);
+    assert(it->second == "bar");
+    
+    it = txl::emplace_or_update(data, 123, "foo");
+    assert(it->first == 123);
+    assert(it->second == "foo");
+}
+
+
 TXL_RUN_TESTS()

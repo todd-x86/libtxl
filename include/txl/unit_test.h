@@ -12,12 +12,12 @@
 #define _TXL_TEST_NAME(n) __test_##n
 #define _TXL_VARIATION_NAME(n) __test_variation_##n
 
-#define TXL_UNIT_TEST(name) struct _test_##name : txl::unit_test  \
+#define TXL_UNIT_TEST_N(name, N) struct _test_##name : txl::unit_test  \
     {   \
         _test_##name() = default;    \
         _test_##name(txl::init_test_t)    \
         {   \
-            txl::add_test(this); \
+            txl::add_test(this, N); \
         }   \
         \
         void _begin_test(std::string_view variation) override  \
@@ -35,6 +35,8 @@
     };  \
     static _test_##name _TXL_TEST_NAME(name){txl::init_test};   \
     void _test_##name::_test()
+
+#define TXL_UNIT_TEST(name) TXL_UNIT_TEST_N(name, 1)
 
 #define TXL_UNIT_TEST_VARIATION(name, func) struct _test_variation_##name : txl::unit_test_variation  \
     {   \
@@ -194,6 +196,18 @@ namespace txl
 
         template<class S, class T>
         inline constexpr bool is_streamable_v = is_streamable<S, T>{}.value;
+
+        struct unit_test_data final
+        {
+            unit_test * test_body;
+            size_t num_loops = 1;
+
+            unit_test_data(unit_test * t, size_t n)
+                : test_body{t}
+                , num_loops{n}
+            {
+            }
+        };
     }
     
     template<class T>
@@ -228,12 +242,12 @@ namespace txl
         return os;
     }
 
-    static std::list<unit_test *> __tests;
+    static std::list<detail::unit_test_data> __tests;
     static std::list<unit_test_variation *> __variations;
 
-    static void add_test(unit_test * test)
+    static void add_test(unit_test * test, size_t num_loops = 1)
     {
-        __tests.emplace_back(test);
+        __tests.emplace_back(test, num_loops);
     }
     
     [[maybe_unused]] static void add_test_variation(unit_test_variation * variation)
@@ -244,12 +258,17 @@ namespace txl
     static auto run_all_tests(std::string_view variation_name = {}) -> bool
     {
         auto success = true;
-        for (auto & test : __tests)
+        for (auto & test_data : __tests)
         {
+            auto test = test_data.test_body;
+
             test->_begin_test(variation_name);
             try
             {
-                test->_test();
+                for (size_t i = 0; i < test_data.num_loops; ++i)
+                {
+                    test->_test();
+                }
                 test->_end_test(true);
             }
             catch (unit_test::assertion_error const & err)
