@@ -26,12 +26,12 @@ namespace txl
 
             auto reset() -> void
             {
-                set_.store(false, std::memory_order_relaxed);
+                set_.store(false, std::memory_order_release);
             }
 
             auto wait() -> void
             {
-                if (not set_.load(std::memory_order_relaxed))
+                if (not set_.load(std::memory_order_acquire))
                 {
                     auto lock = std::unique_lock<std::mutex>{mut_};
                     if (not set_.load(std::memory_order_relaxed))
@@ -43,7 +43,7 @@ namespace txl
 
             auto notify_all() -> void
             {
-                set_.store(true, std::memory_order_relaxed);
+                set_.store(true, std::memory_order_release);
                 cond_.notify_all();
             }
         };

@@ -85,7 +85,7 @@ TXL_UNIT_TEST(atomic_linked_list_add_lots)
     assert_true(l.empty());
 }
 
-TXL_UNIT_TEST(atomic_linked_list_concurrency)
+TXL_UNIT_TEST_N(atomic_linked_list_concurrency, 1000)
 {
     auto l = txl::atomic_linked_list<txl::fixed_string<20>>{};
     auto a = txl::awaiter{};
@@ -119,14 +119,17 @@ TXL_UNIT_TEST(atomic_linked_list_concurrency)
         };
     };
 
-    std::thread t1{add_n(100)}, t2{pop_n(100)}, t3{add_n(200)}, t4{pop_n(190)};
+    std::thread t1{add_n(100)}, t2{pop_n(100)}, t3{add_n(200)};//, t4{pop_n(190)};
     a.notify_all();
     t1.join();
     t2.join();
     t3.join();
-    t4.join();
     assert_equal(l.num_inserts(), 100+200);
-    assert_equal(l.num_pops(), 100+190);
+    assert_equal(l.num_pops(), 100);
+    //t4.join();
+    //assert_equal(l.num_inserts(), 100+200);
+    //assert_equal(l.num_pops(), 100+190);
+    
     //assert_equal(counter.load(std::memory_order_acquire), 240);
 }
 

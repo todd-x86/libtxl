@@ -19,7 +19,7 @@ TXL_UNIT_TEST(baseline)
     assert_not_equal(y, (1+2+4+8+16)*10000);
 }
 
-TXL_UNIT_TEST(awaiter)
+TXL_UNIT_TEST_N(awaiter, 5)
 {
     std::atomic<size_t> next_index = 0;
     std::array<txl::awaiter, 3> awaiters{};
@@ -40,8 +40,10 @@ TXL_UNIT_TEST(awaiter)
         {
             i = 0;
         }
-        awaiters[i].notify_all();
-        awaiters[index].wait();
+        auto & n = awaiters[i];
+        auto & w = awaiters[index];
+        n.notify_all();
+        w.wait();
     }};
     t.set_thread_scale(2, 5);
     t.run();

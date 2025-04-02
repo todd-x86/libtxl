@@ -5,9 +5,58 @@
 #include <atomic>
 #include <cassert>
 #include <optional>
+#include <algorithm>
+#include <iterator>
+#include <memory>
 
 namespace txl
 {
+    static std::unique_ptr<std::byte> heap_base_{std::make_unique<std::byte>()};
+
+    class tiny_ptr_base
+    {
+    private:
+        std::byte const * base_;
+    public:
+        template<class T>
+        tiny_ptr_base(T const * ptr)
+            : base_{reinterpret_cast<std::byte const *>(ptr)}
+        {
+        }
+
+        auto base_ptr() const -> std::byte const * { return base_; }
+    };
+    
+    static tiny_ptr_base tiny_ptr_base_{heap_base_.get()};
+
+    template<class T, class OffsetStorageType = int32_t, size_t OffsetStrideBytes = 1>
+    class tiny_ptr
+    {
+    private:
+        OffsetStorageType offset_;
+    public:
+        tiny_ptr(tiny_ptr_base b, T const * value)
+            : offset_{std::distance(b.base_, reinterpret_cast<std::byte const *>(value)) / OffsetStrideBytes}
+        {
+        }
+
+        auto deref(tiny_ptr_base b) -> T *
+        {
+            return reinterpret_cast<T *>(std::next(b.base_ptr(), offset_ * OffsetStrideBytes));
+        }
+        
+        auto deref(tiny_ptr_base b) const -> T const *
+        {
+            return reinterpret_cast<T const *>(std::next(b.base_ptr(), offset_ * OffsetStrideBytes));
+        }
+    };
+
+    template<class T, class OffsetStorageType = int32_t, size_t OffsetStrideBytes = 1>
+    inline auto to_tiny_ptr(T const * ptr) -> tiny_ptr<T, OffsetStorageType, OffsetStrideBytes>
+    {
+        return {tiny_ptr_base_, ptr};
+    }
+
     template<class Value>
     class atomic_linked_list final
     {
@@ -132,7 +181,7 @@ namespace txl
 
             num_inserts_.fetch_add(1, std::memory_order_relaxed);
 
-            //n->canary_check();
+            n->canary_check();
             return n->val();
         }
         
@@ -152,7 +201,7 @@ namespace txl
             if (head)
             {
                 //atomic_swap_if(tail_, [](auto t) { return t->next_; }, [old_head](auto t) { return old_head == t; });
-                //head->canary_check();
+                head->canary_check();
                 auto res = std::make_optional<Value>(std::move(head->val()));
                 num_pops_.fetch_add(1, std::memory_order_relaxed);
                 //printf("DEL: %p\n", old_head);
