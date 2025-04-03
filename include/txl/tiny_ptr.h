@@ -34,15 +34,9 @@ namespace txl
         auto base_ptr() const -> std::byte const * { return base_; }
     };
     
-    //std::unique_ptr<std::byte> tiny_ptr_base::heap_base_{std::make_unique<std::byte>()};
-    
     template<class T, class OffsetStorageType = int32_t, size_t OffsetStrideBytes = 1>
     class tiny_ptr
     {
-        /*template<class _T, class _O, size_t _S>
-        friend auto operator+(tiny_ptr<_T, _O, _S> a, tiny_ptr_base b) -> T *;*/
-        //template<class _T, class _O, size_t _S>
-        //friend auto operator+(tiny_ptr_base b, tiny_ptr<_T, _O, _S> a) -> T *;
     private:
         OffsetStorageType offset_ = 0;
     public:
@@ -112,12 +106,6 @@ namespace txl
         }
     };
     
-    /*template<class T, class O, size_t S>
-    inline auto operator+(tiny_ptr<T, O, S> a, tiny_ptr_base b) -> T *
-    {
-        return a.deref(b);
-    }*/
-
     template<class T, class O, size_t S>
     inline auto operator+(tiny_ptr_base b, tiny_ptr<T, O, S> a) -> T *
     {

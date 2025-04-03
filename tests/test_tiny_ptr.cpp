@@ -26,6 +26,8 @@ TXL_UNIT_TEST(tiny_ptrs)
     auto tc = to_tiny_ptr(c.get());
     auto td = to_tiny_ptr(d.get());
 
+    assert_equal(sizeof(ta), sizeof(int));
+
     assert_equal(from_tiny_ptr(ta), a.get());
     assert_equal(from_tiny_ptr(tb), b.get());
     assert_equal(from_tiny_ptr(tc), c.get());

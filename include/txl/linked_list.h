@@ -54,23 +54,63 @@ namespace txl
             auto val() -> Value & { return *reinterpret_cast<Value *>(&value_[0]); }
         };
 
-        auto replace_head(tiny_ptr<node> n) -> tiny_ptr<node>
+        struct head_tag final
         {
-            return atomic_swap(head_, [this, n](auto tail) {
-                if (tail)
+        private:
+            tiny_ptr<node> ptr_;
+            uint32_t tag_ = 0;
+            
+            head_tag(tiny_ptr<node> p, uint32_t tag)
+                : ptr_{p}
+                , tag_{tag}
+            {
+            }
+        public:
+            head_tag() = default;
+
+            head_tag(tiny_ptr<node> p)
+                : ptr_{p}
+            {
+            }
+
+            auto ptr() const -> tiny_ptr<node>
+            {
+                return ptr_;
+            }
+
+            auto with_ptr(tiny_ptr<node> p) -> head_tag
+            {
+                return {p, tag_+1};
+            }
+
+            auto operator==(head_tag const & ht) const -> bool
+            {
+                return ht.tag_ == tag_ and ht.ptr_ == ptr_;
+            }
+
+            auto operator!=(head_tag const & ht) const -> bool
+            {
+                return not (*this == ht);
+            }
+        };
+
+        auto replace_head(tiny_ptr<node> n) -> head_tag
+        {
+            return atomic_swap(head_, [this, n](auto ht) {
+                if (ht.ptr())
                 {
-                    from_tiny_ptr(tail)->next_ = n;
+                    from_tiny_ptr(ht.ptr())->next_ = n;
                 }
-                return n;
+                return ht.with_ptr(n);
             });
         }
 
-        std::atomic<tiny_ptr<node>> head_;
+        std::atomic<head_tag> head_;
         std::atomic<size_t> num_inserts_;
         std::atomic<size_t> num_pops_;
     public:
         atomic_linked_list()
-            : head_{nullptr}
+            : head_{head_tag{nullptr}}
             , num_inserts_{0}
             , num_pops_{0}
         {
@@ -101,17 +141,17 @@ namespace txl
         auto clear() -> void
         {
             auto old_head = replace_head(tiny_ptr<node>{nullptr});
-            while (old_head)
+            while (old_head.ptr())
             {
-                auto next = from_tiny_ptr(old_head)->next_;
-                delete from_tiny_ptr(old_head);
+                auto next = from_tiny_ptr(old_head.ptr())->next_;
+                delete from_tiny_ptr(old_head.ptr());
                 old_head = next;
             }
         }
 
         auto empty() const -> bool
         {
-            return head_.load(std::memory_order_relaxed) == tiny_ptr<node>{nullptr};
+            return head_.load(std::memory_order_relaxed).ptr() == tiny_ptr<node>{nullptr};
         }
         
         auto push_back(Value const & v) -> Value &
@@ -126,15 +166,14 @@ namespace txl
             //printf("NEW: %p\n", n);
             new (&n->value_[0]) Value{std::forward<Args>(args)...};
 
-            auto tn = to_tiny_ptr(n);
-
-            tiny_ptr<node> head = nullptr;
+            head_tag head{}, new_head{};
             do
             {
                 head = head_.load(std::memory_order_relaxed);
-                n->next_ = head;
+                new_head = head.with_ptr(to_tiny_ptr(n));
+                n->next_ = head.ptr();
             }
-            while (not head_.compare_exchange_weak(head, tn, std::memory_order_release, std::memory_order_relaxed));
+            while (not head_.compare_exchange_weak(head, new_head, std::memory_order_release, std::memory_order_relaxed));
 
             num_inserts_.fetch_add(1, std::memory_order_relaxed);
 
@@ -144,21 +183,21 @@ namespace txl
         
         auto pop_and_release_front() -> std::optional<Value>
         {
-            tiny_ptr<node> head = nullptr, next = nullptr;
+            head_tag head{}, next{};
             do
             {
                 head = head_.load(std::memory_order_relaxed);
-                if (head)
+                if (head.ptr())
                 {
-                    next = from_tiny_ptr(head)->next_;
+                    next = head.with_ptr(from_tiny_ptr(head.ptr())->next_);
                 }
             }
             while (not head_.compare_exchange_weak(head, next, std::memory_order_release, std::memory_order_relaxed));
 
-            if (head)
+            if (head.ptr())
             {
                 //atomic_swap_if(tail_, [](auto t) { return t->next_; }, [old_head](auto t) { return old_head == t; });
-                auto r_head = from_tiny_ptr(head);
+                auto r_head = from_tiny_ptr(head.ptr());
                 r_head->canary_check();
                 auto res = std::make_optional<Value>(std::move(r_head->val()));
                 num_pops_.fetch_add(1, std::memory_order_relaxed);
