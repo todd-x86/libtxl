@@ -1,6 +1,7 @@
 #pragma once
 
 #include <txl/atomic.h>
+#include <txl/tiny_ptr.h>
 
 #include <atomic>
 #include <cassert>
@@ -11,52 +12,6 @@
 
 namespace txl
 {
-    static std::unique_ptr<std::byte> heap_base_{std::make_unique<std::byte>()};
-
-    class tiny_ptr_base
-    {
-    private:
-        std::byte const * base_;
-    public:
-        template<class T>
-        tiny_ptr_base(T const * ptr)
-            : base_{reinterpret_cast<std::byte const *>(ptr)}
-        {
-        }
-
-        auto base_ptr() const -> std::byte const * { return base_; }
-    };
-    
-    static tiny_ptr_base tiny_ptr_base_{heap_base_.get()};
-
-    template<class T, class OffsetStorageType = int32_t, size_t OffsetStrideBytes = 1>
-    class tiny_ptr
-    {
-    private:
-        OffsetStorageType offset_;
-    public:
-        tiny_ptr(tiny_ptr_base b, T const * value)
-            : offset_{std::distance(b.base_, reinterpret_cast<std::byte const *>(value)) / OffsetStrideBytes}
-        {
-        }
-
-        auto deref(tiny_ptr_base b) -> T *
-        {
-            return reinterpret_cast<T *>(std::next(b.base_ptr(), offset_ * OffsetStrideBytes));
-        }
-        
-        auto deref(tiny_ptr_base b) const -> T const *
-        {
-            return reinterpret_cast<T const *>(std::next(b.base_ptr(), offset_ * OffsetStrideBytes));
-        }
-    };
-
-    template<class T, class OffsetStorageType = int32_t, size_t OffsetStrideBytes = 1>
-    inline auto to_tiny_ptr(T const * ptr) -> tiny_ptr<T, OffsetStorageType, OffsetStrideBytes>
-    {
-        return {tiny_ptr_base_, ptr};
-    }
-
     template<class Value>
     class atomic_linked_list final
     {
@@ -64,7 +19,7 @@ namespace txl
         struct node final
         {
             alignas(Value) std::byte value_[sizeof(Value)];
-            node * next_;
+            tiny_ptr<node> next_;
             uint8_t canary_ = 123;
 
             node(node const &) = delete;
@@ -99,18 +54,18 @@ namespace txl
             auto val() -> Value & { return *reinterpret_cast<Value *>(&value_[0]); }
         };
 
-        auto replace_head(node * n) -> node *
+        auto replace_head(tiny_ptr<node> n) -> tiny_ptr<node>
         {
-            return atomic_swap(head_, [n](auto tail) {
+            return atomic_swap(head_, [this, n](auto tail) {
                 if (tail)
                 {
-                    tail->next_ = n;
+                    from_tiny_ptr(tail)->next_ = n;
                 }
                 return n;
             });
         }
 
-        std::atomic<node *> head_;
+        std::atomic<tiny_ptr<node>> head_;
         std::atomic<size_t> num_inserts_;
         std::atomic<size_t> num_pops_;
     public:
@@ -145,18 +100,18 @@ namespace txl
 
         auto clear() -> void
         {
-            auto old_head = replace_head(nullptr);
+            auto old_head = replace_head(tiny_ptr<node>{nullptr});
             while (old_head)
             {
-                auto next = old_head->next_;
-                delete old_head;
+                auto next = from_tiny_ptr(old_head)->next_;
+                delete from_tiny_ptr(old_head);
                 old_head = next;
             }
         }
 
         auto empty() const -> bool
         {
-            return head_.load(std::memory_order_relaxed) == nullptr;
+            return head_.load(std::memory_order_relaxed) == tiny_ptr<node>{nullptr};
         }
         
         auto push_back(Value const & v) -> Value &
@@ -167,17 +122,19 @@ namespace txl
         template<class... Args>
         auto emplace_back(Args && ... args) -> Value &
         {
-            auto n = new node{ .next_ = nullptr, .canary_ = 123 };
+            auto n = new node{ .next_ = tiny_ptr<node>{nullptr}, .canary_ = 123 };
             //printf("NEW: %p\n", n);
             new (&n->value_[0]) Value{std::forward<Args>(args)...};
 
-            node * head = nullptr;
+            auto tn = to_tiny_ptr(n);
+
+            tiny_ptr<node> head = nullptr;
             do
             {
                 head = head_.load(std::memory_order_relaxed);
                 n->next_ = head;
             }
-            while (not head_.compare_exchange_weak(head, n, std::memory_order_release, std::memory_order_relaxed));
+            while (not head_.compare_exchange_weak(head, tn, std::memory_order_release, std::memory_order_relaxed));
 
             num_inserts_.fetch_add(1, std::memory_order_relaxed);
 
@@ -187,13 +144,13 @@ namespace txl
         
         auto pop_and_release_front() -> std::optional<Value>
         {
-            node * head = nullptr, * next = nullptr;
+            tiny_ptr<node> head = nullptr, next = nullptr;
             do
             {
                 head = head_.load(std::memory_order_relaxed);
                 if (head)
                 {
-                    next = head->next_;
+                    next = from_tiny_ptr(head)->next_;
                 }
             }
             while (not head_.compare_exchange_weak(head, next, std::memory_order_release, std::memory_order_relaxed));
@@ -201,11 +158,12 @@ namespace txl
             if (head)
             {
                 //atomic_swap_if(tail_, [](auto t) { return t->next_; }, [old_head](auto t) { return old_head == t; });
-                head->canary_check();
-                auto res = std::make_optional<Value>(std::move(head->val()));
+                auto r_head = from_tiny_ptr(head);
+                r_head->canary_check();
+                auto res = std::make_optional<Value>(std::move(r_head->val()));
                 num_pops_.fetch_add(1, std::memory_order_relaxed);
                 //printf("DEL: %p\n", old_head);
-                delete head;
+                delete r_head;
                 return res;
             }
             return {};
