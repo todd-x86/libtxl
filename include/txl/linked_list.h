@@ -188,6 +188,7 @@ namespace txl
                 head = head_.load(std::memory_order_relaxed);
                 if (head.ptr())
                 {
+                    // FIXME: ->next_ races with head_.load() above
                     next = head.with_ptr(from_tiny_ptr(head.ptr())->next_);
                 }
             }

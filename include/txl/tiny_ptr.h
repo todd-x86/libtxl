@@ -120,6 +120,12 @@ namespace txl
         return {b, a};
     }
 
+    /**
+     * Storage container for tiny pointers of a specific type.
+     * tiny_ptrs referring to different types may be allocated too far away from each other in virtual address space
+     * presumably for memory safety.
+     * Thus for like-types, we can refer to them with a tiny_ptr_base that sits in their own allocation territory.
+     */
     template<class T>
     struct global_tiny_ptr_storage final
     {
