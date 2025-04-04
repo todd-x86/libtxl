@@ -2,8 +2,10 @@
 
 #include <txl/type_info.h>
 
+#include <chrono>
 #include <list>
 #include <iostream>
+#include <optional>
 #include <sstream>
 #include <stdexcept>
 #include <string_view>
@@ -12,12 +14,12 @@
 #define _TXL_TEST_NAME(n) __test_##n
 #define _TXL_VARIATION_NAME(n) __test_variation_##n
 
-#define TXL_UNIT_TEST_N(name, N) struct _test_##name : txl::unit_test  \
+#define _TXL_UNIT_TEST(name, iters, max_time) struct _test_##name : txl::unit_test  \
     {   \
         _test_##name() = default;    \
         _test_##name(txl::init_test_t)    \
         {   \
-            txl::add_test(this, N); \
+            txl::add_test(this, iters, max_time); \
         }   \
         \
         void _begin_test(std::string_view variation) override  \
@@ -36,7 +38,9 @@
     static _test_##name _TXL_TEST_NAME(name){txl::init_test};   \
     void _test_##name::_test()
 
-#define TXL_UNIT_TEST(name) TXL_UNIT_TEST_N(name, 1)
+#define TXL_UNIT_TEST_N(name, iters) _TXL_UNIT_TEST(name, iters, std::nullopt)
+#define TXL_UNIT_TEST(name) _TXL_UNIT_TEST(name, 1, std::nullopt)
+#define TXL_UNIT_TEST_TIME(name, time) _TXL_UNIT_TEST(name, 1, time)
 
 #define TXL_UNIT_TEST_VARIATION(name, func) struct _test_variation_##name : txl::unit_test_variation  \
     {   \
@@ -131,35 +135,75 @@ namespace txl
         {
             assert(not value);
         }
-
+        
         template<class ExpectedValue, class ActualValue>
-        void assert_equal(ExpectedValue const & expected, ActualValue const & actual)
+        void assert_less_than(ActualValue const & actual, ExpectedValue const & expected, std::string_view custom_message = "assert_less_than")
         {
-            if (not (expected == static_cast<ExpectedValue const &>(actual)))
+            if (not (static_cast<ExpectedValue const &>(actual) < expected))
             {
-                error_buf_ << "assert_equal: " << test_printer<ExpectedValue>{expected} << " (expected) != " << test_printer<ActualValue>{actual} << " (actual)";
+                error_buf_ << custom_message << ": " << test_printer<ActualValue>{actual} << " (actual) >= " << test_printer<ExpectedValue>{expected} << " (expected)";
                 throw assertion_error("assertion failed");
             }
         }
         
         template<class ExpectedValue, class ActualValue>
-        void assert_not_equal(ExpectedValue const & expected, ActualValue const & actual)
+        void assert_less_than_equal(ActualValue const & actual, ExpectedValue const & expected, std::string_view custom_message = "assert_less_than_equal")
+        {
+            if (not (static_cast<ExpectedValue const &>(actual) <= expected))
+            {
+                error_buf_ << custom_message << ": " << test_printer<ActualValue>{actual} << " (actual) > " << test_printer<ExpectedValue>{expected} << " (expected)";
+                throw assertion_error("assertion failed");
+            }
+        }
+        
+        template<class ExpectedValue, class ActualValue>
+        void assert_greater_than(ActualValue const & actual, ExpectedValue const & expected, std::string_view custom_message = "assert_greater_than")
+        {
+            if (not (static_cast<ExpectedValue const &>(actual) > expected))
+            {
+                error_buf_ << custom_message << ": " << test_printer<ActualValue>{actual} << " (actual) <= " << test_printer<ExpectedValue>{expected} << " (expected)";
+                throw assertion_error("assertion failed");
+            }
+        }
+        
+        template<class ExpectedValue, class ActualValue>
+        void assert_greater_than_equal(ActualValue const & actual, ExpectedValue const & expected, std::string_view custom_message = "assert_greater_than_equal")
+        {
+            if (not (static_cast<ExpectedValue const &>(actual) >= expected))
+            {
+                error_buf_ << custom_message << ": " << test_printer<ActualValue>{actual} << " (actual) < " << test_printer<ExpectedValue>{expected} << " (expected)";
+                throw assertion_error("assertion failed");
+            }
+        }
+
+        template<class ExpectedValue, class ActualValue>
+        void assert_equal(ExpectedValue const & expected, ActualValue const & actual, std::string_view custom_message = "assert_equal")
+        {
+            if (not (expected == static_cast<ExpectedValue const &>(actual)))
+            {
+                error_buf_ << custom_message << ": " << test_printer<ExpectedValue>{expected} << " (expected) != " << test_printer<ActualValue>{actual} << " (actual)";
+                throw assertion_error("assertion failed");
+            }
+        }
+        
+        template<class ExpectedValue, class ActualValue>
+        void assert_not_equal(ExpectedValue const & expected, ActualValue const & actual, std::string_view custom_message = "assert_not_equal")
         {
             if ((expected == static_cast<ExpectedValue const &>(actual)))
             {
-                error_buf_ << "assert_not_equal: " << test_printer<ExpectedValue>{expected} << " (expected) == " << test_printer<ActualValue>{actual} << " (actual)";
+                error_buf_ << custom_message << ": " << test_printer<ExpectedValue>{expected} << " (expected) == " << test_printer<ActualValue>{actual} << " (actual)";
                 throw assertion_error("assertion failed");
             }
         }
 
         template<class Exception, class Func>
-        void assert_throws(Func && func)
+        void assert_throws(Func && func, std::string_view custom_message = "assert_throws")
         {
             try
             {
                 func();
 
-                error_buf_ << "assert_throws: no exception thrown";
+                error_buf_ << custom_message << ": no exception thrown";
                 throw assertion_error{"assertion failed"};
             }
             catch (Exception const & ex)
@@ -168,7 +212,7 @@ namespace txl
             }
             catch (...)
             {
-                error_buf_ << "assert_throws: different exception thrown";
+                error_buf_ << custom_message << ": different exception thrown";
                 throw assertion_error{"assertion failed"};
             }
         }
@@ -201,10 +245,12 @@ namespace txl
         {
             unit_test * test_body;
             size_t num_loops = 1;
+            std::optional<std::chrono::nanoseconds> max_time;
 
-            unit_test_data(unit_test * t, size_t n)
+            unit_test_data(unit_test * t, size_t n, std::optional<std::chrono::nanoseconds> mt)
                 : test_body{t}
                 , num_loops{n}
+                , max_time{mt}
             {
             }
         };
@@ -245,9 +291,9 @@ namespace txl
     static std::list<detail::unit_test_data> __tests;
     static std::list<unit_test_variation *> __variations;
 
-    static void add_test(unit_test * test, size_t num_loops = 1)
+    static void add_test(unit_test * test, size_t num_loops = 1, std::optional<std::chrono::nanoseconds> max_time = std::nullopt)
     {
-        __tests.emplace_back(test, num_loops);
+        __tests.emplace_back(test, num_loops, max_time);
     }
     
     [[maybe_unused]] static void add_test_variation(unit_test_variation * variation)
@@ -265,9 +311,25 @@ namespace txl
             test->_begin_test(variation_name);
             try
             {
-                for (size_t i = 0; i < test_data.num_loops; ++i)
+                if (test_data.max_time)
                 {
-                    test->_test();
+                    auto test_duration = *test_data.max_time;
+                    for (size_t i = 0; i < test_data.num_loops; ++i)
+                    {
+                        auto start_time = std::chrono::high_resolution_clock::now();
+                        test->_test();
+                        auto end_time = std::chrono::high_resolution_clock::now();
+
+                        // Check duration of time spent
+                        test->assert_less_than_equal(end_time-start_time, test_duration, "test duration exceeded");
+                    }
+                }
+                else
+                {
+                    for (size_t i = 0; i < test_data.num_loops; ++i)
+                    {
+                        test->_test();
+                    }
                 }
                 test->_end_test(true);
             }

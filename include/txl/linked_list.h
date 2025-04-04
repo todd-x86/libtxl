@@ -58,18 +58,13 @@ namespace txl
         {
         private:
             tiny_ptr<node> ptr_;
-            uint32_t tag_ = 0;
-            
-            head_tag(tiny_ptr<node> p, uint32_t tag)
-                : ptr_{p}
-                , tag_{tag}
-            {
-            }
+            tiny_ptr<node> next_;
         public:
             head_tag() = default;
 
-            head_tag(tiny_ptr<node> p)
+            head_tag(tiny_ptr<node> p, tiny_ptr<node> next)
                 : ptr_{p}
+                , next_{next}
             {
             }
 
@@ -78,14 +73,14 @@ namespace txl
                 return ptr_;
             }
 
-            auto with_ptr(tiny_ptr<node> p) -> head_tag
+            auto next() const -> tiny_ptr<node>
             {
-                return {p, tag_+1};
+                return next_;
             }
 
             auto operator==(head_tag const & ht) const -> bool
             {
-                return ht.tag_ == tag_ and ht.ptr_ == ptr_;
+                return ht.next_ == next_ and ht.ptr_ == ptr_;
             }
 
             auto operator!=(head_tag const & ht) const -> bool
@@ -101,7 +96,8 @@ namespace txl
                 {
                     from_tiny_ptr(ht.ptr())->next_ = n;
                 }
-                return ht.with_ptr(n);
+
+                return head_tag{n, ht.ptr()};
             });
         }
 
@@ -110,7 +106,7 @@ namespace txl
         std::atomic<size_t> num_pops_;
     public:
         atomic_linked_list()
-            : head_{head_tag{nullptr}}
+            : head_{head_tag{nullptr, nullptr}}
             , num_inserts_{0}
             , num_pops_{0}
         {
@@ -141,7 +137,7 @@ namespace txl
         auto clear() -> size_t
         {
             size_t num_destroyed = 0;
-            auto old_head = atomic_swap(head_, [](auto) { return tiny_ptr<node>{nullptr}; }).ptr();
+            auto old_head = atomic_swap(head_, [](auto) { return head_tag{}; }).ptr();
             while (not old_head.is_null())
             {
                 auto next = from_tiny_ptr(old_head)->next_;
@@ -172,8 +168,8 @@ namespace txl
             do
             {
                 head = head_.load(std::memory_order_relaxed);
-                new_head = head.with_ptr(to_tiny_ptr(n));
                 n->next_ = head.ptr();
+                new_head = head_tag{to_tiny_ptr(n), head.ptr()};
             }
             while (not head_.compare_exchange_weak(head, new_head, std::memory_order_release, std::memory_order_relaxed));
 
@@ -189,7 +185,12 @@ namespace txl
                 if (head.ptr())
                 {
                     // FIXME: ->next_ races with head_.load() above
-                    next = head.with_ptr(from_tiny_ptr(head.ptr())->next_);
+                    auto nn = head.next();
+                    if (nn)
+                    {
+                        nn = from_tiny_ptr(nn)->next_;
+                    }
+                    next = head_tag{head.next(), nn};
                 }
             }
             while (not head_.compare_exchange_weak(head, next, std::memory_order_release, std::memory_order_relaxed));
