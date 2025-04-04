@@ -138,15 +138,18 @@ namespace txl
             return num_pops_.load(std::memory_order_relaxed);
         }
 
-        auto clear() -> void
+        auto clear() -> size_t
         {
-            auto old_head = replace_head(tiny_ptr<node>{nullptr});
-            while (old_head.ptr())
+            size_t num_destroyed = 0;
+            auto old_head = atomic_swap(head_, [](auto) { return tiny_ptr<node>{nullptr}; }).ptr();
+            while (not old_head.is_null())
             {
-                auto next = from_tiny_ptr(old_head.ptr())->next_;
-                delete from_tiny_ptr(old_head.ptr());
+                auto next = from_tiny_ptr(old_head)->next_;
+                ++num_destroyed;
+                delete from_tiny_ptr(old_head);
                 old_head = next;
             }
+            return num_destroyed;
         }
 
         auto empty() const -> bool
@@ -160,10 +163,9 @@ namespace txl
         }
 
         template<class... Args>
-        auto emplace_back(Args && ... args) -> Value &
+        auto emplace_back(Args && ... args) -> void
         {
             auto n = new node{ .next_ = tiny_ptr<node>{nullptr}, .canary_ = 123 };
-            //printf("NEW: %p\n", n);
             new (&n->value_[0]) Value{std::forward<Args>(args)...};
 
             head_tag head{}, new_head{};
@@ -176,9 +178,6 @@ namespace txl
             while (not head_.compare_exchange_weak(head, new_head, std::memory_order_release, std::memory_order_relaxed));
 
             num_inserts_.fetch_add(1, std::memory_order_relaxed);
-
-            n->canary_check();
-            return n->val();
         }
         
         auto pop_and_release_front() -> std::optional<Value>
@@ -196,12 +195,11 @@ namespace txl
 
             if (head.ptr())
             {
-                //atomic_swap_if(tail_, [](auto t) { return t->next_; }, [old_head](auto t) { return old_head == t; });
                 auto r_head = from_tiny_ptr(head.ptr());
                 r_head->canary_check();
                 auto res = std::make_optional<Value>(std::move(r_head->val()));
                 num_pops_.fetch_add(1, std::memory_order_relaxed);
-                //printf("DEL: %p\n", old_head);
+                
                 delete r_head;
                 return res;
             }

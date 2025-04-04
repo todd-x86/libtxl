@@ -19,7 +19,7 @@ namespace txl
             if (base_ == nullptr)
             {
                 // We need to subtract a small value from the base such that the first value is not interpreted as null
-                base_ = reinterpret_cast<std::byte const *>(ptr) - sizeof(void *);
+                base_ = reinterpret_cast<std::byte const *>(ptr) - 1;
             }
         }
     public:
@@ -56,6 +56,8 @@ namespace txl
         tiny_ptr(tiny_ptr const &) = default;
         tiny_ptr(tiny_ptr &&) = default;
         
+        auto is_null() const -> bool { return offset_ == 0; }
+        
         auto deref(tiny_ptr_base b) -> T *
         {
             return const_cast<T *>(reinterpret_cast<T const *>(std::next(b.base_ptr(), offset_ * OffsetStrideBytes)));
@@ -69,7 +71,7 @@ namespace txl
         operator bool() const
         {
             // NULL is always the base's offset
-            return offset_ != 0;
+            return not is_null();
         }
 
         auto operator=(tiny_ptr const &) -> tiny_ptr & = default;
