@@ -178,7 +178,18 @@ namespace txl
         
         auto pop_and_release_front() -> std::optional<Value>
         {
+            // Stable/unstable paradigm explanation:
+            //    We're faced with the ABA problem when pop_and_release_front().  emplace_back()/push_back() are purely atomic because they 
+            //    do not depend on inspecting the next value.  pop_and_release_front() is semi-atomic because it reads the head and pops by
+            //    swapping with the head's next node.  If the head is deleted in between the load() and inspecting `next_` for the successive
+            //    head, we encounter a `heap-use-after-free` because of the race condition with deletion.
+            //
+            //    To prevent racing while invoking pop_and_release_front() on several threads, we mark the head as "unstable" which
+            //    means it cannot be popped until it is made stable again.  While it's unstable, we can inspect the head safely without
+            //    deleting.  During the replacement, we make the head stable again so the stable-to-unstable-to-stable time should be short.
+            //
             head_tag old_head, head{}, next{};
+            
             // Mark unstable
             do
             {
@@ -188,7 +199,6 @@ namespace txl
             }
             while (not old_head.stable() or not head_.compare_exchange_weak(head, next, std::memory_order_release, std::memory_order_relaxed));
 
-
             do
             {
                 // head is now unstable
@@ -196,7 +206,6 @@ namespace txl
                 // Make it stable and swap
                 if (old_head.ptr())
                 {
-                    // FIXME: ->next_ races with head_.load() above
                     next = head_tag{from_tiny_ptr(old_head.ptr())->next_, true};
                 }
                 else
@@ -206,6 +215,7 @@ namespace txl
             }
             while (not head_.compare_exchange_weak(head, next, std::memory_order_release, std::memory_order_relaxed));
 
+            // Safely remove the head
             if (old_head.ptr())
             {
                 auto r_head = from_tiny_ptr(old_head.ptr());
