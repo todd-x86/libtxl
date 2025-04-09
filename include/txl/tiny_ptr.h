@@ -142,9 +142,24 @@ namespace txl
         return (global_tiny_ptr_storage<std::remove_cv_t<T>>::base() - ptr);
     }
 
-    template<class T>
-    static inline auto from_tiny_ptr(tiny_ptr<T> ptr) -> T *
+    template<class T, class O, size_t S>
+    static inline auto from_tiny_ptr(tiny_ptr<T, O, S> ptr) -> T *
     {
         return (global_tiny_ptr_storage<std::remove_cv_t<T>>::base() + ptr);
     }
+
+    template<class T, class OffsetStorageType = int32_t, size_t OffsetStrideBytes = 1>
+    class small_ptr : public tiny_ptr<T, OffsetStorageType, OffsetStrideBytes>
+    {
+    public:
+        small_ptr(T const * value)
+            : tiny_ptr<T, OffsetStorageType, OffsetStrideBytes>{global_tiny_ptr_storage<std::remove_cv_t<T>>::base(), value}
+        {
+        }
+
+        auto operator*() -> T & { return *from_tiny_ptr(*this); }
+        auto operator*() const -> T const & { return *from_tiny_ptr(*this); }
+        auto operator->() -> T * { return from_tiny_ptr(*this); }
+        auto operator->() const -> T const * { return from_tiny_ptr(*this); }
+    };
 }

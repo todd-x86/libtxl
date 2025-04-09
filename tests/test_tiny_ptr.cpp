@@ -38,4 +38,29 @@ TXL_UNIT_TEST(tiny_ptrs)
     assert_equal(*from_tiny_ptr(tc), "That's fuppin' it! I'm callin' the fuppin' man!");
 }
 
+TXL_UNIT_TEST(small_ptrs)
+{
+    auto a = std::make_unique<int>(123456);
+    auto b = std::make_unique<double>(1.23456);
+    auto c = std::make_unique<std::string>("That's fuppin' it! I'm callin' the fuppin' man!");
+    auto d = std::make_unique<custom_class>();
+
+    auto ta = txl::small_ptr{a.get()};
+    auto tb = txl::small_ptr{b.get()};
+    auto tc = txl::small_ptr{c.get()};
+    auto td = txl::small_ptr{d.get()};
+
+    assert_equal(sizeof(ta), sizeof(int));
+
+    assert_equal(&(*ta), a.get());
+    assert_equal(&(*tb), b.get());
+    assert_equal(&(*tc), c.get());
+    assert_equal(&(*td), d.get());
+
+    assert_equal(*ta, 123456);
+    assert_equal(*tb, 1.23456);
+    assert_equal(*tc, "That's fuppin' it! I'm callin' the fuppin' man!");
+}
+
+
 TXL_RUN_TESTS()
