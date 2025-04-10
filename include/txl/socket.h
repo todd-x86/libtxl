@@ -21,7 +21,7 @@ namespace txl
         auto read_impl(buffer_ref buf) -> result<size_t> override
         {
             auto res = read(buf, io_flags::none);
-            if (!res)
+            if (not res)
             {
                 return res.error();
             }
@@ -31,7 +31,7 @@ namespace txl
         auto write_impl(buffer_ref buf) -> result<size_t> override
         {
             auto res = write(buf, io_flags::none);
-            if (!res)
+            if (not res)
             {
                 return res.error();
             }
@@ -114,7 +114,7 @@ namespace txl
         auto read(buffer_ref buf, io_flags f) -> result<buffer_ref>
         {
             auto res = ::recv(fd_, buf.data(), buf.size(), static_cast<int>(f));
-            if (auto err = handle_system_error(res); !err)
+            if (auto err = handle_system_error(res); not err)
             {
                 return err.error();
             }
@@ -126,7 +126,7 @@ namespace txl
         auto write(buffer_ref buf, io_flags f) -> result<buffer_ref>
         {
             auto res = ::send(fd_, buf.data(), buf.size(), static_cast<int>(f));
-            if (auto err = handle_system_error(res); !err)
+            if (auto err = handle_system_error(res); not err)
             {
                 return err.error();
             }
@@ -149,7 +149,7 @@ namespace txl
         {
             ::socklen_t out_sockaddr_len = sizeof(out_addr.addr_);
             auto res = ::accept4(fd_, reinterpret_cast<::sockaddr *>(&out_addr.addr_), &out_sockaddr_len, static_cast<int>(flags));
-            if (auto err = handle_system_error(res); !err)
+            if (auto err = handle_system_error(res); not err)
             {
                 return err.error();
             }

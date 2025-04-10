@@ -34,7 +34,7 @@ namespace txl
 
         auto operator!=(type_info const & ti) const -> bool
         {
-            return !(*this == ti);
+            return not (*this == ti);
         }
     };
 

@@ -39,7 +39,7 @@ namespace txl
         Value * get() { return data_.get(); }
         Value const * get() const { return data_.get(); }
 
-        bool empty() const { return !static_cast<bool>(data_); }
+        bool empty() const { return not static_cast<bool>(data_); }
         operator bool() const { return static_cast<bool>(data_); }
     };
 
@@ -94,7 +94,7 @@ namespace txl
         {
             std::unique_lock<std::mutex> lock(lock_);
 
-            if (!res.empty())
+            if (not res.empty())
             {
                 ready_.emplace(std::move(res));
             }

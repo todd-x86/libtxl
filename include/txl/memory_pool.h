@@ -312,7 +312,7 @@ namespace txl
 
     void memory_pool::release(memory_pool_handle & h)
     {
-        if (!h.empty())
+        if (not h.empty())
         {
             dec_ref(h.data_);
             h.data_ = nullptr;

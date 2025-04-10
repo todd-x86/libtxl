@@ -18,7 +18,7 @@ namespace txl
     {
         std::ostringstream ss{};
         stream_writer adapter{ss};
-        if (auto res = copy(rd, adapter, num_bytes); !res)
+        if (auto res = copy(rd, adapter, num_bytes); not res)
         {
             return res.error();
         }

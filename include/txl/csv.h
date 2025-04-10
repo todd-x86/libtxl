@@ -151,7 +151,7 @@ namespace txl
 
             bool operator!=(const_iterator const & it) const
             {
-                return !(*this == it);
+                return not (*this == it);
             }
 
             off_t offset() const
@@ -365,7 +365,7 @@ namespace txl
 
             bool operator!=(const_iterator const & it) const
             {
-                return !(*this == it);
+                return not (*this == it);
             }
         };
 

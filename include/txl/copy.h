@@ -20,7 +20,7 @@ namespace txl
         {
             auto input_buf = copy_buf.slice(0, bytes_to_read.value);
             auto buf_read = src.read(input_buf);
-            if (!buf_read)
+            if (not buf_read)
             {
                 return buf_read.error();
             }
@@ -30,7 +30,7 @@ namespace txl
             }
 
             auto written = dst.write(*buf_read);
-            if (!written)
+            if (not written)
             {
                 return written.error();
             }

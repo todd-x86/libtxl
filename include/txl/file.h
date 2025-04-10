@@ -91,7 +91,7 @@ namespace txl
             }
 
             auto file_mode = get_file_mode(mode);
-            if (!file_mode)
+            if (not file_mode)
             {
                 return file_mode.error();
             }
@@ -141,20 +141,20 @@ namespace txl
         {
             // Record position and seek to end
             auto pos = tell();
-            if (!pos)
+            if (not pos)
             {
                 return pos.error();
             }
 
             auto end_pos = seek(0, seek_end);
-            if (!end_pos)
+            if (not end_pos)
             {
                 return end_pos.error();
             }
 
             // Reset back
             auto res = seek(*pos, seek_set);
-            if (!res)
+            if (not res)
             {
                 return res.error();
             }

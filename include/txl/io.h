@@ -14,7 +14,7 @@ namespace txl
         auto read(buffer_ref buf) -> result<buffer_ref>
         {
             auto bytes_read = read_impl(buf);
-            if (!bytes_read)
+            if (not bytes_read)
             {
                 return bytes_read.error();
             }
@@ -31,7 +31,7 @@ namespace txl
         auto write(buffer_ref buf) -> result<buffer_ref>
         {
             auto bytes_written = write_impl(buf);
-            if (!bytes_written)
+            if (not bytes_written)
             {
                 return bytes_written.error();
             }
