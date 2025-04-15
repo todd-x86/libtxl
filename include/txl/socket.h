@@ -7,6 +7,7 @@
 #include <txl/handle_error.h>
 #include <txl/system_error.h>
 #include <txl/socket_address.h>
+#include <txl/socket_option.h>
 
 #include <sys/socket.h>
 #include <unistd.h>
@@ -188,6 +189,18 @@ namespace txl
             ::socklen_t addr_sz = sa.size();
             auto res = ::getsockname(fd_, reinterpret_cast<::sockaddr *>(&sa.addr_), &addr_sz);
             return handle_system_error(res, sa);
+        }
+        
+        template<class T>
+        auto get_option(socket_option::option<T> opt) const -> result<T>
+        {
+            return get_option<T>(opt.level, opt.opt_name);
+        }
+
+        template<class T>
+        auto set_option(socket_option::option<T> opt, T const & value) -> result<void>
+        {
+            return set_option(opt.level, opt.opt_name, value);
         }
     };
 

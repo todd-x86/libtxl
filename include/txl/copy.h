@@ -18,7 +18,7 @@ namespace txl
         size_t total_read = 0;
         while (not bytes_to_read.is_complete())
         {
-            auto input_buf = copy_buf.slice(0, bytes_to_read.value);
+            auto input_buf = copy_buf.slice(0, bytes_to_read.value());
             auto buf_read = src.read(input_buf);
             if (not buf_read)
             {
@@ -35,7 +35,7 @@ namespace txl
                 return written.error();
             }
             total_read += written->size();
-            bytes_to_read.process(input_buf.size(), written->size());
+            bytes_to_read.process(input_buf, *written);
         }
 
         return total_read;

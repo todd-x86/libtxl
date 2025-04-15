@@ -5,6 +5,7 @@
 #include <txl/result.h>
 #include <txl/stream_writer.h>
 #include <txl/system_error.h>
+#include <txl/size_policy.h>
 
 #include <string>
 #include <cstdlib>
