@@ -58,13 +58,13 @@ namespace txl
         {
         private:
             tiny_ptr<node> ptr_ = nullptr;
-            bool stable_ = true;
+            uint32_t seq_ = 0;
         public:
             head_tag() = default;
 
-            head_tag(tiny_ptr<node> p, bool stable)
+            head_tag(tiny_ptr<node> p, uint32_t seq)
                 : ptr_{p}
-                , stable_{stable}
+                , seq_{seq}
             {
             }
 
@@ -73,14 +73,14 @@ namespace txl
                 return ptr_;
             }
 
-            auto stable() const -> bool
+            auto seq() const -> uint32_t
             {
-                return stable_;
+                return seq_;
             }
 
             auto operator==(head_tag const & ht) const -> bool
             {
-                return ht.stable_ == stable_ and ht.ptr_ == ptr_;
+                return ht.seq_ == seq_ and ht.ptr_ == ptr_;
             }
 
             auto operator!=(head_tag const & ht) const -> bool
@@ -97,7 +97,7 @@ namespace txl
                     from_tiny_ptr(ht.ptr())->next_ = n;
                 }
 
-                return head_tag{n, true};
+                return head_tag{n, ht.seq()+1};
             });
         }
 
@@ -167,58 +167,39 @@ namespace txl
             head_tag head{}, new_head{};
             do
             {
-                head = head_.load(std::memory_order_relaxed);
+                head = head_.load(std::memory_order_acquire);
                 n->next_ = head.ptr();
-                new_head = head_tag{to_tiny_ptr(n), true};
+                new_head = head_tag{to_tiny_ptr(n), head.seq()+1};
             }
-            while (not head.stable() or not head_.compare_exchange_weak(head, new_head, std::memory_order_release, std::memory_order_relaxed));
+            while (not head_.compare_exchange_weak(head, new_head, std::memory_order_release, std::memory_order_relaxed));
 
             num_inserts_.fetch_add(1, std::memory_order_relaxed);
         }
         
         auto pop_and_release_front() -> std::optional<Value>
         {
-            // Stable/unstable paradigm explanation:
-            //    We're faced with the ABA problem when pop_and_release_front().  emplace_back()/push_back() are purely atomic because they 
-            //    do not depend on inspecting the next value.  pop_and_release_front() is semi-atomic because it reads the head and pops by
-            //    swapping with the head's next node.  If the head is deleted in between the load() and inspecting `next_` for the successive
-            //    head, we encounter a `heap-use-after-free` because of the race condition with deletion.
-            //
-            //    To prevent racing while invoking pop_and_release_front() on several threads, we mark the head as "unstable" which
-            //    means it cannot be popped until it is made stable again.  While it's unstable, we can inspect the head safely without
-            //    deleting.  During the replacement, we make the head stable again so the stable-to-unstable-to-stable time should be short.
-            //
-            head_tag old_head, head{}, next{};
-            
-            // Mark unstable
-            do
-            {
-                head = head_.load(std::memory_order_relaxed);
-                old_head = head;
-                next = head_tag{head.ptr(), false};
-            }
-            while (not old_head.stable() or not head_.compare_exchange_weak(head, next, std::memory_order_release, std::memory_order_relaxed));
+            head_tag head, next;
 
             do
             {
-                // head is now unstable
+                head = head_.load(std::memory_order_acquire);
 
                 // Make it stable and swap
-                if (old_head.ptr())
+                if (head.ptr())
                 {
-                    next = head_tag{from_tiny_ptr(old_head.ptr())->next_, true};
+                    next = head_tag{from_tiny_ptr(head.ptr())->next_, head.seq()+1};
                 }
                 else
                 {
-                    next = head_tag{nullptr, true};
+                    next = head_tag{nullptr, head.seq()+1};
                 }
             }
             while (not head_.compare_exchange_weak(head, next, std::memory_order_release, std::memory_order_relaxed));
 
             // Safely remove the head
-            if (old_head.ptr())
+            if (head.ptr())
             {
-                auto r_head = from_tiny_ptr(old_head.ptr());
+                auto r_head = from_tiny_ptr(head.ptr());
                 r_head->canary_check();
                 auto res = std::make_optional<Value>(std::move(r_head->val()));
                 num_pops_.fetch_add(1, std::memory_order_relaxed);
