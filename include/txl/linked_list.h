@@ -58,6 +58,7 @@ namespace txl
         {
         private:
             tiny_ptr<node> ptr_ = nullptr;
+            // seq_ is a way to deal with the ABA problem
             uint32_t seq_ = 0;
         public:
             head_tag() = default;
@@ -184,7 +185,6 @@ namespace txl
             {
                 head = head_.load(std::memory_order_acquire);
 
-                // Make it stable and swap
                 if (head.ptr())
                 {
                     next = head_tag{from_tiny_ptr(head.ptr())->next_, head.seq()+1};
