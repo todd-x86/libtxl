@@ -105,6 +105,14 @@ auto copy_all(txl::foreach_view<std::string> const & src, std::vector<std::strin
     });
 }
 
+auto copy_all(txl::virtual_iterator_view<std::string> const & src, std::vector<std::string> & dst)
+{
+    for (auto const & el : src)
+    {
+        dst.emplace_back(el);
+    }
+}
+
 TXL_UNIT_TEST(test_foreach_view)
 {
     std::vector<std::string> src{}, dst{};
@@ -121,6 +129,36 @@ TXL_UNIT_TEST(test_foreach_view)
     copy_all(txl::container_foreach_view{src}, dst);
 
     assert_equal(dst.size(), src.size());
+    
+    for (auto i = 0; i < 1000; ++i)
+    {
+        assert_equal(src[i], dst[i]);
+    }
+}
+
+TXL_UNIT_TEST(test_virtual_iterator)
+{
+    std::vector<std::string> src{}, dst{};
+
+    std::ostringstream ss{};
+
+    for (auto i = 0; i < 1000; ++i)
+    {
+        ss.str("");
+        ss << "This is a string " << i;
+        src.emplace_back(ss.str());
+    }
+
+    auto begin = txl::virtual_iterator_wrapper{src.begin()};
+    auto end = txl::virtual_iterator_wrapper{src.end()};
+    copy_all({begin, end}, dst);
+
+    assert_equal(dst.size(), src.size());
+    
+    for (auto i = 0; i < 1000; ++i)
+    {
+        assert_equal(src[i], dst[i]);
+    }
 }
 
 

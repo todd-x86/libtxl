@@ -19,6 +19,139 @@ namespace txl
         };
     }
 
+    template<class T>
+    struct virtual_iterator
+    {
+    private:
+        T const * last_ = nullptr;
+    public:
+        virtual auto get_ref() const -> T const & = 0;
+        virtual auto next() -> T const * = 0;
+
+        auto get_ptr() -> T const *
+        {
+            if (last_ == nullptr)
+            {
+                last_ = &get_ref();
+            }
+            return last_;
+        };
+
+        auto get_ptr() const -> T const *
+        {
+            if (last_ == nullptr)
+            {
+                return &get_ref();
+            }
+            return last_;
+        }
+
+        auto operator->() const -> T const *
+        {
+            return get_ptr();
+        }
+
+        auto operator*() const -> T const &
+        {
+            return *get_ptr();
+        }
+
+        auto operator==(virtual_iterator const & it) const -> bool
+        {
+            return get_ptr() == it.get_ptr();
+        }
+
+        auto operator!=(virtual_iterator const & it) const -> bool
+        {
+            return !(*this == it);
+        }
+
+        auto operator++() -> virtual_iterator &
+        {
+            last_ = next();
+            return *this;
+        }
+    };
+
+    template<class Iter, class Value = typename std::iterator_traits<Iter>::value_type>
+    struct virtual_iterator_wrapper final : virtual_iterator<Value>
+    {
+    private:
+        Iter it_;
+    public:
+        virtual_iterator_wrapper(Iter it)
+            : it_{it}
+        {
+        }
+
+        auto next() -> Value const * override
+        {
+            ++it_;
+            return &(*it_);
+        }
+
+        auto get_ref() const -> Value const & override
+        {
+            return *it_;
+        }
+    };
+
+    template<class T>
+    class virtual_iterator_view final
+    {
+    private:
+        virtual_iterator<T> & begin_;
+        virtual_iterator<T> & end_;
+    public:
+        struct const_iterator final
+        {
+            virtual_iterator<T> * it_;
+
+            const_iterator(virtual_iterator<T> & it)
+                : it_{&it}
+            {
+            }
+
+            auto operator->() const -> T const *
+            {
+                return &(**it_);
+            }
+
+            auto operator*() const -> T const &
+            {
+                return **it_;
+            }
+
+            auto operator==(const_iterator const & it) const -> bool
+            {
+                return *it.it_ == *it_;
+            }
+
+            auto operator!=(const_iterator const & it) const -> bool
+            {
+                return !(*this == it);
+            }
+
+            auto operator++() -> const_iterator &
+            {
+                ++(*it_);
+                return *this;
+            }
+        };
+
+        virtual_iterator_view(virtual_iterator<T> & begin, virtual_iterator<T> & end)
+            : begin_(begin)
+            , end_(end)
+        {
+        }
+
+        auto begin() const -> const_iterator { return begin_; }
+        auto end() const -> const_iterator { return end_; }
+    };
+
+    /**
+     * Lightweight interface on iterating over a generic collection.
+     */
     template<class Value>
     struct foreach_view
     {
