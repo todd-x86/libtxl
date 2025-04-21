@@ -98,5 +98,30 @@ TXL_UNIT_TEST(test_emplace_or_update_unordered_map)
     assert(it->second == "foo");
 }
 
+auto copy_all(txl::foreach_view<std::string> const & src, std::vector<std::string> & dst)
+{
+    src.foreach([&](auto const & el) {
+        dst.emplace_back(el);
+    });
+}
+
+TXL_UNIT_TEST(test_foreach_view)
+{
+    std::vector<std::string> src{}, dst{};
+
+    std::ostringstream ss{};
+
+    for (auto i = 0; i < 1000; ++i)
+    {
+        ss.str("");
+        ss << "This is a string " << i;
+        src.emplace_back(ss.str());
+    }
+
+    copy_all(txl::container_foreach_view{src}, dst);
+
+    assert_equal(dst.size(), src.size());
+}
+
 
 TXL_RUN_TESTS()

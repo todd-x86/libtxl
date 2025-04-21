@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <type_traits>
+#include <functional>
 
 namespace txl
 {
@@ -17,6 +18,32 @@ namespace txl
         {
         };
     }
+
+    template<class Value>
+    struct foreach_view
+    {
+        virtual auto foreach(std::function<void(Value const &)> on_element) const -> void = 0;
+    };
+
+    template<class Container, class Value = typename Container::value_type>
+    class container_foreach_view final : public foreach_view<Value>
+    {
+    private:
+        Container const & container_;
+    public:
+        container_foreach_view(Container const & container)
+            : container_{container}
+        {
+        }
+
+        auto foreach(std::function<void(Value const &)> on_element) const -> void override
+        {
+            for (auto const & el : container_)
+            {
+                on_element(el);
+            }
+        }
+    };
 
     template<class Container, class ValueOrFunc>
     inline auto find_or_emplace(Container & container, typename Container::key_type const & key, ValueOrFunc && value_or_func) -> typename Container::iterator

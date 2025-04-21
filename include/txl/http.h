@@ -1,14 +1,52 @@
 #pragma once
 
+#include <txl/buffer_ref.h>
 #include <txl/socket_address.h>
 #include <txl/socket.h>
 #include <txl/result.h>
 #include <txl/read_string.h>
 #include <txl/size_policy.h>
 #include <iostream>
+#include <optional>
+#include <string>
 
 namespace txl::http
 {
+    struct http_header_field final
+    {
+        ::txl::buffer_ref name;
+        ::txl::buffer_ref value;
+    };
+
+    class http_1_1_parser
+    {
+    private:
+        auto parse_http_request() -> void
+        {
+            parse_start_line();
+            std::optional<http_header_field> header{};
+            do
+            {
+                header = parse_field_line();
+            }
+            while (header);
+            parse_message_body();
+        }
+
+        auto parse_start_line() -> void
+        {
+        }
+
+        auto parse_field_line() -> std::optional<http_header_field>
+        {
+            return {};
+        }
+
+        auto parse_message_body() -> void
+        {
+        }
+    };
+    
     class test_server
     {
     private:
