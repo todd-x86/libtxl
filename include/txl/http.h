@@ -67,11 +67,7 @@ namespace txl::http
             listener_.set_option(::txl::socket_option::linger, ::linger{1,0}).or_throw();
             do
             {
-                auto res = listener_.listen(0);
-                if (not res)
-                {
-                    return res;
-                }
+                listener_.listen(0).or_throw();
 
                 auto client = listener_.accept().or_throw();
                 auto req = ::txl::read_string(client, ::txl::one_of{::txl::until{"\n\n"}, ::txl::at_most{1024}}).or_throw();

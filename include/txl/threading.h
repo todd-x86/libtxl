@@ -43,6 +43,7 @@ namespace txl
 
             auto notify_all() -> void
             {
+                auto lock = std::unique_lock<std::mutex>{mut_};
                 set_.store(true, std::memory_order_release);
                 cond_.notify_all();
             }
