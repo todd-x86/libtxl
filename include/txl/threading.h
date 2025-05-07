@@ -1,5 +1,6 @@
 #pragma once
 
+#include <txl/free_guard.h>
 #include <txl/linked_list.h>
 
 #include <functional>
@@ -115,12 +116,12 @@ namespace txl
     class thread_pool_worker final
     {
     private:
-        using thread_work_list = atomic_linked_list<std::unique_ptr<thread_pool_work>>;
+        using thread_work_list = atomic_linked_list<thread_pool_work *>;
 
+        awaiter work_awaiter_;
         awaiter & idle_awaiter_;
         std::atomic<size_t> & job_counter_;
         std::thread thread_;
-        std::condition_variable cond_;
         std::unique_ptr<thread_work_list> pending_;
         std::atomic_bool stopped_;
 
@@ -138,7 +139,8 @@ namespace txl
                 auto w = pending_->pop_and_release_front();
                 if (w)
                 {
-                    auto work = std::move(*w);
+                    auto work = *w;
+                    free_guard f{work};
                     do
                     {
                         work->execute();
@@ -148,11 +150,17 @@ namespace txl
                     auto old_counter = job_counter_.fetch_sub(1, std::memory_order_acq_rel);
                     if (old_counter <= 1)
                     {
-                        // Notify that we're in an idle state now
-                        idle_awaiter_.notify_all();
-                        idle_awaiter_.reset();
                     }
                     return true;
+                }
+
+                if (not stopped_.load(std::memory_order_relaxed))
+                {
+                    // Notify that we're in an idle state now
+                    idle_awaiter_.notify_all();
+                    idle_awaiter_.reset();
+
+                    work_awaiter_.wait();
                 }
             }
             // Notify that we're in an idle state now
@@ -212,8 +220,8 @@ namespace txl
                 return false;
             }
 
-            pending_->emplace_back(std::move(c));
-            cond_.notify_one();
+            pending_->emplace_back(c.release());
+            work_awaiter_.notify_all();
             return true;
         }
 
@@ -234,7 +242,7 @@ namespace txl
         auto stop() -> void
         {
             stopped_.store(true, std::memory_order_release);
-            cond_.notify_all();
+            work_awaiter_.notify_all();
         }
 
         auto wait_for_shutdown() -> void
