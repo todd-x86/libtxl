@@ -23,20 +23,16 @@ TXL_UNIT_TEST_N(awaiter, 5)
 {
     std::atomic<size_t> next_index = 0;
     std::array<txl::awaiter, 3> awaiters{};
-    for (size_t i = 0; i < awaiters.size(); ++i)
-    {
-        awaiters[i] = txl::awaiter{};
-    }
 
     auto t = txl::threading_unit_test{[&]() {
         auto index = next_index.fetch_add(1);
-        if (index == awaiters.size())
+        if (index >= awaiters.size())
         {
             next_index.store(0);
             index = 0;
         }
         auto i = index + 1;
-        if (i == awaiters.size())
+        if (i >= awaiters.size())
         {
             i = 0;
         }

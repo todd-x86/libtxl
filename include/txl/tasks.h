@@ -23,9 +23,9 @@ namespace txl
     class future
     {
     private:
-        awaiter awaiter_;
+        awaiter & awaiter_;
     public:
-        future(awaiter const & a)
+        future(awaiter & a)
             : awaiter_(a)
         {
         }
@@ -71,15 +71,9 @@ namespace txl
             return *this;
         }
 
-        auto get_future() const -> future<ReturnType>
+        auto get_future() -> future<ReturnType>
         {
             return {awaiter_};
-        }
-
-        auto move_from(promise<ReturnType> && p) -> void
-        {
-            res_ = std::move(p.res_);
-            p.awaiter_.assign(awaiter_);
         }
 
         auto release_value() -> ReturnType &&
@@ -167,13 +161,7 @@ namespace txl
             return *this;
         }
         
-        auto move_from(promise<void> && p) -> void
-        {
-            res_ = p.res_;
-            p.awaiter_.assign(awaiter_);
-        }
-
-        auto get_future() const -> future<void>
+        auto get_future() -> future<void>
         {
             return {awaiter_};
         }

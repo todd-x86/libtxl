@@ -6,6 +6,7 @@ add_executable(test_rb_reader test_rb_reader.cpp)
 add_executable(test_rb_writer test_rb_writer.cpp)
 target_link_libraries(test_rb_reader atomic)
 target_link_libraries(test_rb_writer atomic)
+add_executable(test_threading_1 test_threading_1.cpp)
 
 add_executable(test_backoff test_backoff.cpp)
 add_test(NAME test_backoff COMMAND test_backoff)

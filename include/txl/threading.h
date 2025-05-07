@@ -17,104 +17,55 @@ namespace txl
     class awaiter
     {
     private:
-        struct awaiter_core final
+        struct core final
         {
-            std::condition_variable cond_;
             std::mutex mut_;
-            // TODO: atomic_flag
-            std::atomic_bool set_ = false;
-
-            auto reset() -> void
-            {
-                set_.store(false, std::memory_order_release);
-            }
-
-            auto wait() -> void
-            {
-                if (not set_.load(std::memory_order_acquire))
-                {
-                    auto lock = std::unique_lock<std::mutex>{mut_};
-                    if (not set_.load(std::memory_order_relaxed))
-                    {
-                        cond_.wait(lock);
-                    }
-                }
-            }
-
-            auto notify_all() -> void
-            {
-                auto lock = std::unique_lock<std::mutex>{mut_};
-                set_.store(true, std::memory_order_release);
-                cond_.notify_all();
-            }
+            std::condition_variable cond_;
         };
-
-        std::shared_ptr<awaiter_core> core_{};
+        std::unique_ptr<core> core_;
+        std::atomic_bool set_ = false;
     public:
         awaiter()
-            : core_(std::make_shared<awaiter_core>())
-        {
-        }
-        
-        awaiter(awaiter const & a)
-            : core_(a.core_)
+            : core_{std::make_unique<core>()}
         {
         }
 
         awaiter(awaiter && a)
-            : core_(std::move(a.core_))
+            : core_{std::move(a.core_)}
+            , set_{a.set_.load(std::memory_order_relaxed)}
         {
         }
         
         auto operator=(awaiter && a) -> awaiter &
         {
-            if (this != &a)
+            if (&a != this)
             {
-                auto p = std::move(a.core_);
-                core_ = std::move(p);
+                core_ = std::move(a.core_);
+                set_ = a.set_.load(std::memory_order_relaxed);
             }
             return *this;
-        }
-        
-        auto operator=(awaiter const & a) -> awaiter &
-        {
-            if (this != &a)
-            {
-                auto p = a.core_;
-                core_ = p;
-            }
-            return *this;
-        }
-
-        auto assign(awaiter & a) -> void
-        {
-            core_ = a.core_;
         }
 
         auto reset() -> void
         {
-            auto p = core_;
-            if (p)
-            {
-                p->reset();
-            }
+            set_.store(false, std::memory_order_release);
         }
 
         auto notify_all() -> void
         {
-            auto p = core_;
-            if (p)
-            {
-                p->notify_all();
-            }
+            set_.store(true, std::memory_order_release);
+            core_->cond_.notify_all();
         }
 
         auto wait() -> void
         {
-            auto p = core_;
-            if (p)
+            if (not set_.load(std::memory_order_acquire))
             {
-                p->wait();
+                auto lock = std::unique_lock<std::mutex>{core_->mut_};
+                if (not set_.load(std::memory_order_relaxed))
+                {
+                    core_->cond_.wait(lock);
+                }
             }
         }
     };
@@ -166,16 +117,11 @@ namespace txl
     private:
         using thread_work_list = atomic_linked_list<std::unique_ptr<thread_pool_work>>;
 
-        struct pending_waiter final
-        {
-            std::condition_variable cond_;
-            std::mutex mut_;
-        };
         awaiter & idle_awaiter_;
         std::atomic<size_t> & job_counter_;
         std::thread thread_;
+        std::condition_variable cond_;
         std::unique_ptr<thread_work_list> pending_;
-        std::unique_ptr<pending_waiter> pending_waiter_;
         std::atomic_bool stopped_;
 
         auto thread_body() -> void
@@ -203,23 +149,15 @@ namespace txl
                     if (old_counter <= 1)
                     {
                         // Notify that we're in an idle state now
-                        idle_awaiter_.reset();
                         idle_awaiter_.notify_all();
+                        idle_awaiter_.reset();
                     }
                     return true;
                 }
-
-                {
-                    auto lock = std::unique_lock<std::mutex>{pending_waiter_->mut_};
-                    if (not stopped_.load(std::memory_order_relaxed))
-                    {
-                        pending_waiter_->cond_.wait(lock);
-                    }
-                }
             }
             // Notify that we're in an idle state now
-            idle_awaiter_.reset();
             idle_awaiter_.notify_all();
+            idle_awaiter_.reset();
 
             return false;
         }
@@ -228,7 +166,6 @@ namespace txl
             : idle_awaiter_(idle_awaiter)
             , job_counter_(job_counter)
             , pending_(std::make_unique<thread_work_list>())
-            , pending_waiter_(std::make_unique<pending_waiter>())
         {
             stopped_.store(false, std::memory_order_release);
         }
@@ -240,7 +177,6 @@ namespace txl
             , job_counter_(w.job_counter_)
             , thread_(std::move(w.thread_))
             , pending_(std::move(w.pending_))
-            , pending_waiter_(std::move(w.pending_waiter_))
             , stopped_()
         {
             auto old_value = stopped_.load();
@@ -256,7 +192,6 @@ namespace txl
             {
                 thread_ = std::move(w.thread_);
                 pending_ = std::move(w.pending_);
-                pending_waiter_ = std::move(w.pending_waiter_);
                 
                 auto old_value = stopped_.load();
                 stopped_.store(w.stopped_.load());
@@ -278,7 +213,7 @@ namespace txl
             }
 
             pending_->emplace_back(std::move(c));
-            pending_waiter_->cond_.notify_one();
+            cond_.notify_one();
             return true;
         }
 
@@ -299,7 +234,7 @@ namespace txl
         auto stop() -> void
         {
             stopped_.store(true, std::memory_order_release);
-            pending_waiter_->cond_.notify_all();
+            cond_.notify_all();
         }
 
         auto wait_for_shutdown() -> void
@@ -354,7 +289,6 @@ namespace txl
             {
                 idle_awaiter_.wait();
             }
-            idle_awaiter_.reset();
         }
 
         auto start_workers() -> void
