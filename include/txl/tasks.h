@@ -45,7 +45,7 @@ namespace txl
 
         auto notify_awaiters() -> void
         {
-            awaiter_.notify_all();
+            awaiter_.set();
         }
     public:
         promise() = default;
@@ -135,7 +135,7 @@ namespace txl
 
         auto notify_awaiters() -> void
         {
-            awaiter_.notify_all();
+            awaiter_.set();
         }
     public:
         promise() = default;

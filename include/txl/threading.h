@@ -52,22 +52,29 @@ namespace txl
             set_.store(false, std::memory_order_release);
         }
 
-        auto notify_all() -> void
+        auto set() -> void
         {
             set_.store(true, std::memory_order_release);
             core_->cond_.notify_all();
         }
 
-        auto wait() -> void
+        auto wait() -> bool
         {
             if (set_.load(std::memory_order_acquire))
             {
-                return;
+                return false;
             }
             auto lock = std::unique_lock<std::mutex>{core_->mut_};
             core_->cond_.wait(lock, [this] {
                 return set_.load(std::memory_order_acquire);
             });
+            return true;
+        }
+
+        auto wait_and_reset() -> void
+        {
+            wait();
+            reset();
         }
     };
     
@@ -154,15 +161,13 @@ namespace txl
                 if (not stopped_.load(std::memory_order_relaxed))
                 {
                     // Notify that we're in an idle state now
-                    idle_awaiter_.notify_all();
-                    idle_awaiter_.reset();
+                    idle_awaiter_.set();
 
-                    work_awaiter_.wait();
+                    work_awaiter_.wait_and_reset();
                 }
             }
             // Notify that we're in an idle state now
-            idle_awaiter_.notify_all();
-            idle_awaiter_.reset();
+            idle_awaiter_.set();
 
             return false;
         }
@@ -207,7 +212,7 @@ namespace txl
 
         auto wait_for_idle() -> void
         {
-            idle_awaiter_.wait();
+            idle_awaiter_.wait_and_reset();
         }
 
         auto post(std::unique_ptr<thread_pool_work> && c) -> bool
@@ -218,7 +223,7 @@ namespace txl
             }
 
             pending_->emplace_back(c.release());
-            work_awaiter_.notify_all();
+            work_awaiter_.set();
             return true;
         }
 
@@ -239,7 +244,7 @@ namespace txl
         auto stop() -> void
         {
             stopped_.store(true, std::memory_order_release);
-            work_awaiter_.notify_all();
+            work_awaiter_.set();
         }
 
         auto wait_for_shutdown() -> void
@@ -292,7 +297,7 @@ namespace txl
         {
             while (pending_.load(std::memory_order_relaxed) > 0)
             {
-                idle_awaiter_.wait();
+                idle_awaiter_.wait_and_reset();
             }
         }
 

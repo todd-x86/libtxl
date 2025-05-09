@@ -120,7 +120,7 @@ TXL_UNIT_TEST_N(atomic_linked_list_concurrency, 100)
     };
 
     std::thread t1{add_n(100)}, t2{pop_n(100)}, t3{add_n(200)}, t4{pop_n(190)};
-    a.notify_all();
+    a.set();
     t1.join();
     t2.join();
     t3.join();

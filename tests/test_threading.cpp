@@ -35,12 +35,11 @@ TXL_UNIT_TEST(awaiter)
         threads[i] = std::thread{[num_cycles,&awaiter=awaiters[i],&count,&num_responded,&phone_home] {
             for (auto i = 0; i < num_cycles; ++i)
             {
-                awaiter.wait();
-                awaiter.reset();
+                awaiter.wait_and_reset();
                 count.fetch_add(1, std::memory_order_relaxed);
 
                 num_responded.fetch_add(1, std::memory_order_relaxed);
-                phone_home.notify_all();
+                phone_home.set();
             }
         }};
     }
@@ -51,12 +50,11 @@ TXL_UNIT_TEST(awaiter)
         num_responded.store(0, std::memory_order_relaxed);
         for (auto & awaiter : awaiters)
         {
-            awaiter.notify_all();
+            awaiter.set();
         }
         while (num_responded.load(std::memory_order_relaxed) < threads.size())
         {
-            phone_home.wait();
-            phone_home.reset();
+            phone_home.wait_and_reset();
         }
         assert_equal(count.load(std::memory_order_relaxed), threads.size()*(i+1));
     }
