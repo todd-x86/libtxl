@@ -19,30 +19,51 @@ TXL_UNIT_TEST(baseline)
     assert_not_equal(y, (1+2+4+8+16)*10000);
 }
 
-TXL_UNIT_TEST_N(awaiter, 5)
+TXL_UNIT_TEST(awaiter)
 {
-    std::atomic<size_t> next_index = 0;
-    std::array<txl::awaiter, 3> awaiters{};
+    std::atomic<size_t> count = 0;
+    int num_cycles = 10;
 
-    auto t = txl::threading_unit_test{[&]() {
-        auto index = next_index.fetch_add(1);
-        if (index >= awaiters.size())
+    std::array<txl::awaiter, 3> awaiters{};
+    std::array<std::thread, 3> threads{};
+
+    std::atomic<size_t> num_responded = 0;
+    txl::awaiter phone_home{};
+    for (size_t i = 0; i < threads.size(); ++i)
+    {
+        awaiters[i] = txl::awaiter{};
+        threads[i] = std::thread{[num_cycles,&awaiter=awaiters[i],&count,&num_responded,&phone_home] {
+            for (auto i = 0; i < num_cycles; ++i)
+            {
+                awaiter.wait();
+                awaiter.reset();
+                count.fetch_add(1, std::memory_order_relaxed);
+
+                num_responded.fetch_add(1, std::memory_order_relaxed);
+                phone_home.notify_all();
+            }
+        }};
+    }
+
+    assert_equal(count.load(std::memory_order_relaxed), 0);
+    for (auto i = 0; i < num_cycles; ++i)
+    {
+        num_responded.store(0, std::memory_order_relaxed);
+        for (auto & awaiter : awaiters)
         {
-            next_index.store(0);
-            index = 0;
+            awaiter.notify_all();
         }
-        auto i = index + 1;
-        if (i >= awaiters.size())
+        while (num_responded.load(std::memory_order_relaxed) < threads.size())
         {
-            i = 0;
+            phone_home.wait();
+            phone_home.reset();
         }
-        auto & n = awaiters[i];
-        auto & w = awaiters[index];
-        n.notify_all();
-        w.wait();
-    }};
-    t.set_thread_scale(2, 5);
-    t.run();
+        assert_equal(count.load(std::memory_order_relaxed), threads.size()*(i+1));
+    }
+    for (auto & thread : threads)
+    {
+        thread.join();
+    }
 }
 
 TXL_UNIT_TEST(thread_pool_simple)

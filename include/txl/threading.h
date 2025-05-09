@@ -60,14 +60,14 @@ namespace txl
 
         auto wait() -> void
         {
-            if (not set_.load(std::memory_order_acquire))
+            if (set_.load(std::memory_order_acquire))
             {
-                auto lock = std::unique_lock<std::mutex>{core_->mut_};
-                if (not set_.load(std::memory_order_relaxed))
-                {
-                    core_->cond_.wait(lock);
-                }
+                return;
             }
+            auto lock = std::unique_lock<std::mutex>{core_->mut_};
+            core_->cond_.wait(lock, [this] {
+                return set_.load(std::memory_order_acquire);
+            });
         }
     };
     
@@ -147,10 +147,7 @@ namespace txl
                     }
                     while (not stopped_.load(std::memory_order_relaxed) and work->next());
                     work->complete();
-                    auto old_counter = job_counter_.fetch_sub(1, std::memory_order_acq_rel);
-                    if (old_counter <= 1)
-                    {
-                    }
+                    job_counter_.fetch_sub(1, std::memory_order_acq_rel);
                     return true;
                 }
 
