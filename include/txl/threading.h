@@ -24,7 +24,7 @@ namespace txl
             std::condition_variable cond_;
         };
         std::unique_ptr<core> core_;
-        std::atomic_bool set_ = false;
+        bool set_ = false;
     public:
         awaiter()
             : core_{std::make_unique<core>()}
@@ -33,7 +33,7 @@ namespace txl
 
         awaiter(awaiter && a)
             : core_{std::move(a.core_)}
-            , set_{a.set_.load(std::memory_order_relaxed)}
+            , set_{a.set_}
         {
         }
         
@@ -42,31 +42,35 @@ namespace txl
             if (&a != this)
             {
                 core_ = std::move(a.core_);
-                set_ = a.set_.load(std::memory_order_relaxed);
+                set_ = a.set_;
             }
             return *this;
         }
 
         auto reset() -> void
         {
-            set_.store(false, std::memory_order_release);
+            auto lock = std::unique_lock<std::mutex>{core_->mut_};
+            set_ = false;
         }
 
         auto set() -> void
         {
-            set_.store(true, std::memory_order_release);
+            {
+                auto lock = std::unique_lock<std::mutex>{core_->mut_};
+                set_ = true;
+            }
             core_->cond_.notify_all();
         }
 
         auto wait() -> bool
         {
-            if (set_.load(std::memory_order_acquire))
+            if (set_)
             {
                 return false;
             }
             auto lock = std::unique_lock<std::mutex>{core_->mut_};
             core_->cond_.wait(lock, [this] {
-                return set_.load(std::memory_order_acquire);
+                return set_;
             });
             return true;
         }
