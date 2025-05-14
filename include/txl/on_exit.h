@@ -16,7 +16,10 @@ namespace txl
 
         ~on_exit()
         {
-            exec_();
+            if (exec_)
+            {
+                exec_();
+            }
         }
     };
 }

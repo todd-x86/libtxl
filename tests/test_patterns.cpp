@@ -44,12 +44,12 @@ TXL_UNIT_TEST(test_if_found)
 {
     std::map<int, std::string> names{ {10, "Tad Ghostal"}, {20, "Brak"} };
 
-    assert(txl::if_found(names, 10, [](auto it) {
+    assert(txl::if_found(names, 10, [this](auto it) {
         assert(it->first == 10);
         assert(it->second == "Tad Ghostal");
     }));
     
-    assert(not txl::if_found(names, 30, [](auto it) {
+    assert(not txl::if_found(names, 30, [this](auto it) {
         assert(it->first == 30);
         assert(it->second == "Zorak");
         assert(false);
@@ -57,7 +57,7 @@ TXL_UNIT_TEST(test_if_found)
 
     std::vector<int> nums{9,8,7,6,5};
     
-    assert(txl::if_found(nums, 5, [](auto it) {
+    assert(txl::if_found(nums, 5, [this](auto it) {
         assert(*it == 5);
     }));
 }

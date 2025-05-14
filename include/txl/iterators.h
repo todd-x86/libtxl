@@ -141,6 +141,52 @@ namespace txl
             return *this;
         }
     };
+
+    template<class Value>
+    class basic_iterator final
+    {
+    private:
+        Value * current_;
+    public:
+        basic_iterator(Value * current)
+            : current_{current}
+        {
+        }
+
+        auto operator->() const -> Value *
+        {
+            return current_;
+        }
+
+        auto operator*() const -> Value &
+        {
+            return *current_;
+        }
+
+        auto operator++() -> basic_iterator &
+        {
+            ++current_;
+            return *this;
+        }
+
+        auto operator++(ptrdiff_t d) -> basic_iterator &
+        {
+            current_ += d;
+            return *this;
+        }
+
+        auto operator--() -> basic_iterator &
+        {
+            --current_;
+            return *this;
+        }
+
+        auto operator--(ptrdiff_t d) -> basic_iterator &
+        {
+            current_ -= d;
+            return *this;
+        }
+    };
     
     template<class Iter>
     inline auto make_circular_iterator(Iter begin, Iter end) noexcept -> circular_iterator<Iter>
