@@ -118,26 +118,23 @@ namespace txl
         }
         virtual void _test() = 0;
 
-        static void assert(bool value)
+        auto assert(bool value, std::string_view custom_message = "assert") -> void
         {
-            if (not value)
-            {
-                throw assertion_error("assertion failed");
-            }
+            assert_equal(true, value, custom_message);
         }
 
-        auto assert_true(bool value)
+        auto assert_true(bool value, std::string_view custom_message = "assert_true") -> void
         {
-            assert(value);
+            assert_equal(true, value, custom_message);
         }
 
-        auto assert_false(bool value)
+        auto assert_false(bool value, std::string_view custom_message = "assert_false") -> void
         {
-            assert(not value);
+            assert_equal(false, value, custom_message);
         }
         
         template<class ExpectedValue, class ActualValue>
-        void assert_less_than(ActualValue const & actual, ExpectedValue const & expected, std::string_view custom_message = "assert_less_than")
+        auto assert_less_than(ActualValue const & actual, ExpectedValue const & expected, std::string_view custom_message = "assert_less_than") -> void
         {
             if (not (static_cast<ExpectedValue const &>(actual) < expected))
             {
@@ -147,7 +144,7 @@ namespace txl
         }
         
         template<class ExpectedValue, class ActualValue>
-        void assert_less_than_equal(ActualValue const & actual, ExpectedValue const & expected, std::string_view custom_message = "assert_less_than_equal")
+        auto assert_less_than_equal(ActualValue const & actual, ExpectedValue const & expected, std::string_view custom_message = "assert_less_than_equal") -> void
         {
             if (not (static_cast<ExpectedValue const &>(actual) <= expected))
             {
@@ -157,7 +154,7 @@ namespace txl
         }
         
         template<class ExpectedValue, class ActualValue>
-        void assert_greater_than(ActualValue const & actual, ExpectedValue const & expected, std::string_view custom_message = "assert_greater_than")
+        auto assert_greater_than(ActualValue const & actual, ExpectedValue const & expected, std::string_view custom_message = "assert_greater_than") -> void
         {
             if (not (static_cast<ExpectedValue const &>(actual) > expected))
             {
@@ -167,7 +164,7 @@ namespace txl
         }
         
         template<class ExpectedValue, class ActualValue>
-        void assert_greater_than_equal(ActualValue const & actual, ExpectedValue const & expected, std::string_view custom_message = "assert_greater_than_equal")
+        auto assert_greater_than_equal(ActualValue const & actual, ExpectedValue const & expected, std::string_view custom_message = "assert_greater_than_equal") -> void
         {
             if (not (static_cast<ExpectedValue const &>(actual) >= expected))
             {
@@ -177,7 +174,7 @@ namespace txl
         }
 
         template<class ExpectedValue, class ActualValue>
-        void assert_equal(ExpectedValue const & expected, ActualValue const & actual, std::string_view custom_message = "assert_equal")
+        auto assert_equal(ExpectedValue const & expected, ActualValue const & actual, std::string_view custom_message = "assert_equal") -> void
         {
             if (not (expected == static_cast<ExpectedValue const &>(actual)))
             {
@@ -187,7 +184,7 @@ namespace txl
         }
         
         template<class ExpectedValue, class ActualValue>
-        void assert_not_equal(ExpectedValue const & expected, ActualValue const & actual, std::string_view custom_message = "assert_not_equal")
+        auto assert_not_equal(ExpectedValue const & expected, ActualValue const & actual, std::string_view custom_message = "assert_not_equal") -> void
         {
             if ((expected == static_cast<ExpectedValue const &>(actual)))
             {
@@ -197,7 +194,7 @@ namespace txl
         }
 
         template<class Exception, class Func>
-        void assert_throws(Func && func, std::string_view custom_message = "assert_throws")
+        auto assert_throws(Func && func, std::string_view custom_message = "assert_throws") -> void
         {
             try
             {
@@ -216,8 +213,22 @@ namespace txl
                 throw assertion_error{"assertion failed"};
             }
         }
+        
+        template<class Func>
+        auto assert_no_throw(Func && func, std::string_view custom_message = "assert_no_throw") -> void
+        {
+            try
+            {
+                func();
+            }
+            catch (...)
+            {
+                error_buf_ << custom_message << ": exception thrown";
+                throw assertion_error{"assertion failed"};
+            }
+        }
 
-        auto _set_error(std::string_view msg)
+        auto _set_error(std::string_view msg) -> void
         {
             error_buf_ << "exception thrown: " << msg;
         }
@@ -271,6 +282,12 @@ namespace txl
             comma = true;
         }
         os << "}";
+        return os;
+    }
+    
+    inline auto operator<<(std::ostream & os, unit_test::test_printer<bool> const & value) -> std::ostream &
+    {
+        os << std::boolalpha << value.value_;
         return os;
     }
 
