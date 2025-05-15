@@ -2,6 +2,8 @@
 
 #include <algorithm>
 #include <type_traits>
+#include <map>
+#include <unordered_map>
 #include <functional>
 
 namespace txl
@@ -278,5 +280,38 @@ namespace txl
             auto [_, emplaced] = container.emplace(key, static_cast<typename Container::mapped_type &&>(std::move(value)));
             return emplaced;
         }
+    }
+
+    template<class Container, class Value = typename Container::value_type>
+    inline auto to_vector(Container const & container) -> std::vector<Value>
+    {
+        std::vector<Value> res{};
+        for (auto const & item : container)
+        {
+            res.push_back(item);
+        }
+        return res;
+    }
+
+    template<class Container, class KeyType = std::remove_cv_t<typename Container::value_type::first_type>, class MappedType = typename Container::value_type::second_type>
+    inline auto to_map(Container const & container) -> std::map<KeyType, MappedType>
+    {
+        std::map<KeyType, MappedType> res{};
+        for (auto const & [key, value] : container)
+        {
+            res.emplace(key, value);
+        }
+        return res;
+    }
+
+    template<class Container, class KeyType = std::remove_cv_t<typename Container::value_type::first_type>, class MappedType = typename Container::value_type::second_type>
+    inline auto to_unordered_map(Container const & container) -> std::unordered_map<KeyType, MappedType>
+    {
+        std::unordered_map<KeyType, MappedType> res{};
+        for (auto const & [key, value] : container)
+        {
+            res.emplace(key, value);
+        }
+        return res;
     }
 }

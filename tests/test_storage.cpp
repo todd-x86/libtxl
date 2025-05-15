@@ -26,18 +26,18 @@ struct sentinel final
 size_t sentinel::num_creates_ = 0;
 size_t sentinel::num_deletes_ = 0;
 
-TXL_UNIT_TEST(storage)
+TXL_UNIT_TEST(safe_storage)
 {
     sentinel::reset();
     assert_equal(sentinel::num_creates_, 0);
     assert_equal(sentinel::num_deletes_, 0);
 
-    txl::storage<sentinel> empty{};
+    txl::safe_storage<sentinel> empty{};
     assert_true(empty.empty());
     assert_equal(sentinel::num_creates_, 0);
     assert_equal(sentinel::num_deletes_, 0);
 
-    txl::storage<sentinel> once{};
+    txl::safe_storage<sentinel> once{};
     assert_true(once.empty());
     once.emplace();
     assert_false(once.empty());
@@ -52,7 +52,34 @@ TXL_UNIT_TEST(storage)
     assert_equal(sentinel::num_creates_, 2);
     assert_equal(sentinel::num_deletes_, 1);
     
-    once = txl::storage<sentinel>{};
+    once = txl::safe_storage<sentinel>{};
+    assert_equal(sentinel::num_creates_, 2);
+    assert_equal(sentinel::num_deletes_, 2);
+}
+
+TXL_UNIT_TEST(storage)
+{
+    sentinel::reset();
+    assert_equal(sentinel::num_creates_, 0);
+    assert_equal(sentinel::num_deletes_, 0);
+
+    txl::storage<sentinel> empty{};
+    assert_equal(sentinel::num_creates_, 0);
+    assert_equal(sentinel::num_deletes_, 0);
+
+    empty.emplace();
+    assert_equal(sentinel::num_creates_, 1);
+    assert_equal(sentinel::num_deletes_, 0);
+    
+    empty.emplace();
+    assert_equal(sentinel::num_creates_, 2);
+    assert_equal(sentinel::num_deletes_, 0);
+    
+    empty.erase();
+    assert_equal(sentinel::num_creates_, 2);
+    assert_equal(sentinel::num_deletes_, 1);
+    
+    empty.erase();
     assert_equal(sentinel::num_creates_, 2);
     assert_equal(sentinel::num_deletes_, 2);
 }

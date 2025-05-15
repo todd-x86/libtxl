@@ -11,7 +11,7 @@ namespace txl
     class fixed_vector
     {
     private:
-        std::array<Value, Count> data_;
+        storage<Value> data_[Count];
         size_t count_ = 0;
     public:
         using value_type = Value;

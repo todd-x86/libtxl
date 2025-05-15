@@ -161,5 +161,26 @@ TXL_UNIT_TEST(test_virtual_iterator)
     }
 }
 
+TXL_UNIT_TEST(test_to_vector)
+{
+    std::map<std::string, int> inventory{{"Health", 90}, {"Armor", 25}, {"Revolver", 15}, {"Rocket Launcher", 4}};
+
+    std::vector<std::pair<std::string const, int>> expected{{"Armor", 25}, {"Health", 90}, {"Revolver", 15}, {"Rocket Launcher", 4}};
+    assert_equal(expected, txl::to_vector(inventory));
+}
+
+TXL_UNIT_TEST(test_to_map)
+{
+    std::map<std::string, int> inventory{{"Health", 90}, {"Armor", 25}, {"Revolver", 15}, {"Rocket Launcher", 4}};
+
+    assert_equal(inventory, txl::to_map(txl::to_vector(inventory)));
+}
+
+TXL_UNIT_TEST(test_to_unordered_map)
+{
+    std::unordered_map<std::string, int> inventory{{"Health", 90}, {"Armor", 25}, {"Revolver", 15}, {"Rocket Launcher", 4}};
+
+    assert_equal(inventory, txl::to_unordered_map(txl::to_vector(inventory)));
+}
 
 TXL_RUN_TESTS()
