@@ -285,6 +285,13 @@ namespace txl
         return os;
     }
     
+    template<class T1, class T2>
+    inline auto operator<<(std::ostream & os, unit_test::test_printer<std::pair<T1, T2>> const & value) -> std::ostream &
+    {
+        os << "{" << unit_test::test_printer<T1>{value.value_.first} << ", " << unit_test::test_printer<T2>{value.value_.second} << "}";
+        return os;
+    }
+    
     inline auto operator<<(std::ostream & os, unit_test::test_printer<bool> const & value) -> std::ostream &
     {
         os << std::boolalpha << value.value_;

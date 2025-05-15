@@ -169,7 +169,7 @@ namespace txl
             return *this;
         }
 
-        auto operator++(ptrdiff_t d) -> basic_iterator &
+        auto operator+(ptrdiff_t d) -> basic_iterator &
         {
             current_ += d;
             return *this;
@@ -181,7 +181,7 @@ namespace txl
             return *this;
         }
 
-        auto operator--(ptrdiff_t d) -> basic_iterator &
+        auto operator-(ptrdiff_t d) -> basic_iterator &
         {
             current_ -= d;
             return *this;
