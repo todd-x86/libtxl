@@ -4,6 +4,14 @@
 
 namespace txl
 {
+    /**
+     * Performs an atomic swap with acquire-release semantics in a weak memory model.
+     * 
+     * \tparam T underlying atomic storage type
+     * \param value atomic to swap
+     * \param new_value replacement value
+     * \return previous value in atomic
+     */
     template<class T>
     static auto atomic_swap(std::atomic<T> & value, T new_value) -> T
     {
@@ -16,6 +24,16 @@ namespace txl
         return old_value;
     }
     
+    /**
+     * Performs an atomic swap with a value supplied via a factory function.
+     * This operation is performed with acquire-release semantics in a weak memory model.
+     * 
+     * \tparam T underlying atomic storage type
+     * \tparam Func factory function of type: (T const &) -> T
+     * \param value atomic to swap
+     * \param new_value_factory factory function returning replacement value
+     * \return previous value in atomic
+     */
     template<class T, class Func>
     static auto atomic_swap(std::atomic<T> & value, Func && new_value_factory) -> T
     {
@@ -30,6 +48,17 @@ namespace txl
         return old_value;
     }
     
+    /**
+     * Performs an atomic swap with a new value if a condition is met.
+     * This operation is performed with acquire-release semantics in a weak memory model.
+     * 
+     * \tparam T underlying atomic storage type
+     * \tparam Func condition function type: (T const &) -> bool
+     * \param value atomic to swap
+     * \param new_value replacement value
+     * \param cond condition function that returns true to perform a swap
+     * \return previous value in atomic
+     */
     template<class T, class Func>
     static auto atomic_swap_if(std::atomic<T> & value, T new_value, Func && cond) -> T
     {
@@ -47,6 +76,18 @@ namespace txl
         return old_value;
     }
     
+    /**
+     * Performs an atomic swap with a new value supplied from a factory function if a condition is met.
+     * This operation is performed with acquire-release semantics in a weak memory model.
+     * 
+     * \tparam T underlying atomic storage type
+     * \tparam FactoryFunc new value function type: (T const &) -> T
+     * \tparam ConditionFunc condition function type: (T const &) -> bool
+     * \param value atomic to swap
+     * \param new_value_factory replacement value factory function
+     * \param cond condition function that returns true to perform a swap
+     * \return previous value in atomic
+     */
     template<class T, class FactoryFunc, class ConditionFunc>
     static auto atomic_swap_if(std::atomic<T> & value, FactoryFunc && new_value_factory, ConditionFunc && cond) -> T
     {

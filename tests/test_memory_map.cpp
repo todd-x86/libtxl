@@ -34,6 +34,8 @@ TXL_UNIT_TEST(mmap_anonymous)
         // "Hello" -> "Hallo"
         m[1] = std::byte{'a'};
         assert_equal(m.slice(0, 5).to_string_view(), "Hallo"sv);
+
+        assert_false(map.sync(m).is_error());
     }
 }
 

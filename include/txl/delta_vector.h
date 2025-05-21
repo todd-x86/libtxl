@@ -9,47 +9,40 @@ namespace txl
     {
     private:
         Base base_;
+        Base last_;
         std::vector<Delta> deltas_;
     public:
         using value_type = Value;
-
+        
         class const_iterator final
         {
         private:
-            Base base_;
+            Base last_;
             Delta const * delta_;
         public:
             const_iterator(Base const & base, Delta const * delta)
-                : base_{base}
+                : last_{base}
                 , delta_{delta}
             {
             }
 
-            auto operator*() const -> Value { return base_ + *delta_; }
-            auto operator-(ptrdiff_t d) -> const_iterator &
-            {
-                delta_ -= d;
-                return *this;
-            }
-            auto operator+(ptrdiff_t d) -> const_iterator &
-            {
-                delta_ + d;
-                return *this;
-            }
+            auto operator*() const -> Value { return last_ + *delta_; }
             auto operator--() -> const_iterator &
             {
+                last_ -= *delta_;
                 --delta_;
                 return *this;
             }
             auto operator++() -> const_iterator &
             {
+                last_ += *delta_;
                 ++delta_;
                 return *this;
             }
 
             auto operator==(const_iterator const & it) const -> bool
             {
-                return base_ == it.base_ and delta_ == it.delta_;
+                return delta_ == it.delta_;
             }
 
             auto operator!=(const_iterator const & it) const -> bool
@@ -60,30 +53,27 @@ namespace txl
 
         delta_vector(Base const & base)
             : base_{base}
+            , last_{base}
         {
             // Insert a zero-diff value to compute the first value
-            push_back(base);
+            push_back_delta(base - base);
         }
 
         auto clear() -> void
         {
             deltas_.clear();
-            push_back(base_);
-        }
-
-        auto erase(const_iterator const & it) -> const_iterator
-        {
-            auto delta_it = deltas_.erase(it.delta_);
-            return {it.base_, &(*delta_it)};
+            last_ = base_;
+            push_back_delta(base_ - base_);
         }
 
         auto push_back(Base const & value) -> void
         {
-            deltas_.push_back(static_cast<Delta>(value - base_));
+            push_back_delta(static_cast<Delta>(value - last_));
         }
         
         auto push_back_delta(Delta const & value) -> void
         {
+            last_ += value;
             deltas_.push_back(value);
         }
 

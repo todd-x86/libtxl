@@ -122,6 +122,14 @@ namespace txl
         {
             return buffer_ref{data(), size()};
         }
+        
+        auto sync(buffer_ref mem, bool async = false, bool invalidate = false) -> result<void>
+        {
+            int flags = (invalidate ? MS_INVALIDATE : 0);
+            flags |= (async ? MS_ASYNC : MS_SYNC);
+            auto res = ::msync(mem.data(), mem.size(), flags);
+            return handle_system_error(res);
+        }
     };
 
     inline auto operator|(txl::memory_map::protection_flags x, txl::memory_map::protection_flags y) -> txl::memory_map::protection_flags
