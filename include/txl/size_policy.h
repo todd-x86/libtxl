@@ -63,7 +63,7 @@ namespace txl
     {
     private:
         buffer_ref match_;
-        size_t match_idx_ = 0;
+        //size_t match_idx_ = 0;
         bool matched_ = false;
     public:
         until(buffer_ref match, size_t buffer_size = 1024)

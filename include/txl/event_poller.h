@@ -43,7 +43,7 @@ namespace txl
 
     class event_tag final
     {
-        friend class event_poller;
+        friend struct event_poller;
     private:
         ::epoll_data data_{};
     public:

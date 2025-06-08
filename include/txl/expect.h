@@ -12,8 +12,6 @@ namespace txl
     private:
         static std::function<void(expect const &, std::chrono::steady_clock::time_point const &)> on_at_most_;
 
-        char const * filename_;
-        size_t line_;
         std::chrono::steady_clock::time_point start_;
         std::chrono::steady_clock::time_point limit_;
     public:
@@ -24,9 +22,7 @@ namespace txl
 
         template<class Rep, class Period>
         expect(char const * filename, size_t line, std::chrono::duration<Rep, Period> const & duration)
-            : filename_(filename)
-            , line_(line)
-            , start_(std::chrono::steady_clock::now())
+            : start_(std::chrono::steady_clock::now())
             , limit_(start_ + duration)
         {
         }

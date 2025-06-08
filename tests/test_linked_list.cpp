@@ -43,15 +43,15 @@ TXL_UNIT_TEST(atomic_linked_list_free)
     l.emplace_back();
     assert_equal(num_deletes, 0);
     assert_false(l.empty());
-    // pop_and_release_front() can destruct 3 instances (1 for empty node destruction, 1 for moving into optional, 1 for destructing the optional below (RAII))
+    // pop_and_release_front() can destruct 2 instances (1 for empty node destruction, 1 for destructing the optional below (RAII))
     l.pop_and_release_front();
-    assert_equal(num_deletes, 1*3);
+    assert_equal(num_deletes, 1*2);
     l.pop_and_release_front();
-    assert_equal(num_deletes, 2*3);
+    assert_equal(num_deletes, 2*2);
     l.pop_and_release_front();
-    assert_equal(num_deletes, 3*3);
+    assert_equal(num_deletes, 3*2);
     l.pop_and_release_front();
-    assert_equal(num_deletes, 3*3);
+    assert_equal(num_deletes, 3*2);
     assert_true(l.empty());
 }
 
