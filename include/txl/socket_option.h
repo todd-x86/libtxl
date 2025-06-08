@@ -18,4 +18,6 @@ namespace txl::socket_option
     };
 
     static constexpr const option<::linger> linger{SOL_SOCKET, SO_LINGER};
+    static constexpr const option<::timeval> recv_timeout{SOL_SOCKET, SO_RCVTIMEO};
+    static constexpr const option<::timeval> send_timeout{SOL_SOCKET, SO_SNDTIMEO};
 }

@@ -7,6 +7,7 @@
 namespace txl::time
 {
     static constexpr const long NANOS_PER_SECOND = 1'000'000'000L;
+    static constexpr const long MICROS_PER_SECOND = 1'000'000L;
 
     template<class Rep, class Period>
     inline auto to_timespec(std::chrono::duration<Rep, Period> d) -> ::timespec
@@ -28,7 +29,7 @@ namespace txl::time
     inline auto to_duration(::timespec const & ts) -> std::chrono::duration<Rep, Period>
     {
         auto total_nanos = (ts.tv_sec * NANOS_PER_SECOND) + ts.tv_nsec;
-        return std::chrono::nanoseconds{total_nanos};
+        return std::chrono::duration_cast<std::chrono::duration<Rep, Period>>(std::chrono::nanoseconds{total_nanos});
     }
     
     template<class Duration>
@@ -48,5 +49,14 @@ namespace txl::time
     inline auto to_time_point(::timespec const & ts) -> TimePoint
     {
         return to_time_point<typename TimePoint::clock, typename TimePoint::duration>(ts);
+    }
+
+    template<class Rep, class Period>
+    inline auto to_timeval(std::chrono::duration<Rep, Period> d) -> ::timeval
+    {
+        auto micros = std::chrono::duration_cast<std::chrono::microseconds>(d).count();
+        auto secs = micros / MICROS_PER_SECOND;
+        micros -= (secs * MICROS_PER_SECOND);
+        return {secs, micros};
     }
 }

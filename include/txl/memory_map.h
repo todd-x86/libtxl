@@ -30,7 +30,9 @@ namespace txl
 
         enum open_flags : int
         {
+#ifdef MAP_32BIT
             lower_2gb = MAP_32BIT,
+#endif
             anonymous = MAP_ANONYMOUS,
             fixed_or_replace = MAP_FIXED,
             fixed_or_fail = MAP_FIXED_NOREPLACE,
