@@ -25,4 +25,43 @@ namespace txl
             return std::move(func());
         }
     };
+
+    template<class T>
+    class optional_ref
+    {
+    private:
+        T * data_;
+    public:
+        template<class Opt>
+        optional_ref(std::optional<Opt> & data)
+            : data_{&(*data)}
+        {
+        }
+        
+        template<class Opt>
+        optional_ref(std::optional<Opt> const & data)
+            : data_{const_cast<Opt *>(&(*data))}
+        {
+        }
+
+        auto operator->() -> T *
+        {
+            return data_;
+        }
+
+        auto operator*() -> T &
+        {
+            return *data_;
+        }
+
+        auto operator->() const -> T const *
+        {
+            return data_;
+        }
+
+        auto operator*() const -> T const &
+        {
+            return *data_;
+        }
+    };
 }

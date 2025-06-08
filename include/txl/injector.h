@@ -2,6 +2,8 @@
 
 #include <txl/type_info.h>
 
+#include <vector>
+#include <memory>
 #include <unordered_map>
 #include <functional>
 
@@ -26,6 +28,8 @@ namespace txl
             {
             }
         public:
+            injector_data(injector_data &&) = default;
+
             template<class T>
             static auto create(T & data) -> injector_data
             {
@@ -41,7 +45,7 @@ namespace txl
             template<class T>
             auto get(injector & i) -> T *
             {
-                if (!data_)
+                if (not data_)
                 {
                     data_ = factory_(i);
                 }
@@ -49,19 +53,31 @@ namespace txl
             }
         };
 
-        std::unordered_map<txl::type_info, injector_data> types_;
+        std::vector<std::unique_ptr<injector_data>> factories_;
+        std::unordered_map<txl::type_info, injector_data *> types_;
+
+        template<class Base, class... OtherBases>
+        auto add_types(injector_data * data) -> void
+        {
+            types_.emplace(txl::get_type_info<Base>(), data);
+            if constexpr (sizeof...(OtherBases) > 0)
+            {
+                add_types<OtherBases...>(data);
+            }
+        }
     public:
         template<class Base, class... OtherBases, class Derived>
         auto add(Derived & d) -> void
         {
-            types_.emplace(txl::get_type_info<Base>(), injector_data::create(d));
-            add<OtherBases...>(d);
+            factories_.emplace_back(std::make_unique<injector_data>(injector_data::create(d)));
+            add_types<Base, OtherBases...>(factories_.back().get());
         }
 
         template<class Derived>
         auto add(Derived & d) -> void
         {
-            types_.emplace(txl::get_type_info<Derived>(), injector_data::create(d));
+            factories_.emplace_back(std::make_unique<injector_data>(injector_data::create(d)));
+            add_types<Derived>(factories_.back().get());
         }
 
         template<class T>
@@ -72,13 +88,14 @@ namespace txl
             {
                 return nullptr;
             }
-            return t->second.template get<T>(*this);
+            return t->second->template get<T>(*this);
         }
-
-        template<class T>
+        
+        template<class T, class... OtherBases>
         auto factory(injector_type_factory<T> f) -> void
         {
-            types_.emplace(txl::get_type_info<T>(), injector_data::create(f));
+            factories_.emplace_back(std::make_unique<injector_data>(injector_data::create(f)));
+            add_types<T, OtherBases...>(factories_.back().get());
         }
     };
 }

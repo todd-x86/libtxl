@@ -604,6 +604,7 @@ namespace txl
     private:
         static std::unique_ptr<task_runner> global_;
     public:
+        virtual ~task_runner() = default;
         virtual auto run(closure && c) -> void = 0;
         virtual auto delay(uint64_t nanos) -> task<void> = 0;
         
