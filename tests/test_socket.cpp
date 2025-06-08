@@ -1,6 +1,7 @@
 #include <txl/unit_test.h>
 #include <txl/socket.h>
 #include <txl/read_string.h>
+#include <txl/time.h>
 
 #include <string_view>
 
@@ -21,6 +22,8 @@ TXL_UNIT_TEST(socket_bind_listen)
     // Connect to listener
     txl::socket_address client_addr{"127.0.0.1", server.get_local_address().or_throw().port()};
     txl::socket client{txl::socket::internet, txl::socket::stream};
+    client.set_option(txl::socket_option::recv_timeout, txl::time::to_timeval(std::chrono::seconds{1})).or_throw(); 
+    client.set_option(txl::socket_option::send_timeout, txl::time::to_timeval(std::chrono::seconds{1})).or_throw(); 
     client.connect(client_addr).or_throw();
 }
 
