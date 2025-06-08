@@ -245,31 +245,38 @@ namespace txl
         {
         }
 
-        auto swap(fixed_vector & other) -> void
+        template<size_t S>
+        auto swap(fixed_vector<Value, S> & other) -> void
         {
         }
 
-        auto operator==(fixed_vector const & other) const -> bool
+        template<size_t S>
+        auto operator==(fixed_vector<Value, S> const & other) const -> bool
         {
         }
         
-        auto operator!=(fixed_vector const & other) const -> bool
+        template<size_t S>
+        auto operator!=(fixed_vector<Value, S> const & other) const -> bool
         {
         }
         
-        auto operator<(fixed_vector const & other) const -> bool
+        template<size_t S>
+        auto operator<(fixed_vector<Value, S> const & other) const -> bool
         {
         }
         
-        auto operator<=(fixed_vector const & other) const -> bool
+        template<size_t S>
+        auto operator<=(fixed_vector<Value, S> const & other) const -> bool
         {
         }
         
-        auto operator>(fixed_vector const & other) const -> bool
+        template<size_t S>
+        auto operator>(fixed_vector<Value, S> const & other) const -> bool
         {
         }
         
-        auto operator>(fixed_vector const & other) const -> bool
+        template<size_t S>
+        auto operator>(fixed_vector<Value, S> const & other) const -> bool
         {
         }
     };
