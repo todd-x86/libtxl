@@ -28,9 +28,21 @@ static size_t num_deletes = 0;
 
 struct delete_me final
 {
+    bool can_delete_ = true;
+
+    delete_me() = default;
+
+    delete_me(delete_me && d)
+    {
+        d.can_delete_ = false;
+    }
+
     ~delete_me()
     {
-        ++num_deletes;
+        if (can_delete_)
+        {
+            ++num_deletes;
+        }
     }
 };
 
@@ -43,15 +55,14 @@ TXL_UNIT_TEST(atomic_linked_list_free)
     l.emplace_back();
     assert_equal(num_deletes, 0);
     assert_false(l.empty());
-    // pop_and_release_front() can destruct 2 instances (1 for empty node destruction, 1 for destructing the optional below (RAII))
     l.pop_and_release_front();
-    assert_equal(num_deletes, 1*2);
+    assert_equal(num_deletes, 1);
     l.pop_and_release_front();
-    assert_equal(num_deletes, 2*2);
+    assert_equal(num_deletes, 2);
     l.pop_and_release_front();
-    assert_equal(num_deletes, 3*2);
+    assert_equal(num_deletes, 3);
     l.pop_and_release_front();
-    assert_equal(num_deletes, 3*2);
+    assert_equal(num_deletes, 3);
     assert_true(l.empty());
 }
 
