@@ -36,7 +36,9 @@ namespace txl
             fixed_or_fail = MAP_FIXED_NOREPLACE,
             stack = MAP_GROWSDOWN | MAP_STACK,
             huge_tlb = MAP_HUGETLB,
+ #ifdef MAP_HUGE_2MB
             huge_tlb_2mb = MAP_HUGE_2MB,
+ #endif
             huge_tlb_4mb = (22 << MAP_HUGE_SHIFT),
             huge_tlb_8mb = (23 << MAP_HUGE_SHIFT),
             huge_tlb_16mb = (24 << MAP_HUGE_SHIFT),
