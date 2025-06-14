@@ -26,6 +26,27 @@ namespace txl
         auto end() const noexcept -> Iter { return end_; }
         auto size() const noexcept -> size_t { return std::distance(begin_, end_); }
         auto empty() const noexcept -> bool { return begin_ == end_; }
+        auto from_begin(int offset) const -> iterator_view
+        {
+            auto begin = begin_;
+            while (offset)
+            {
+                ++begin;
+                --offset;
+            }
+            return {begin, end_};
+        }
+        
+        auto trim_end(int offset) const -> iterator_view
+        {
+            auto end = end_;
+            while (offset and end != begin_)
+            {
+                ++offset;
+                --end;
+            }
+            return {begin_, end};
+        }
     };
 
     template<class Iter>
