@@ -1,5 +1,7 @@
 #pragma once
 
+#include <algorithm>
+
 namespace txl
 {
     template<class Value>
@@ -59,6 +61,11 @@ namespace txl
                 val() = std::move(s.val());
             }
             return *this;
+        }
+
+        auto swap(storage & s) -> void
+        {
+            std::swap(s.val(), val());
         }
 
         auto operator*() -> Value & { return val(); }

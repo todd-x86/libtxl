@@ -306,4 +306,28 @@ TXL_UNIT_TEST(run_move_and_run)
     });
 }
 
+TXL_UNIT_TEST(two_awaiters)
+{
+    std::atomic<int> num_waited = 0;
+    txl::promise<void> prom{};
+
+    std::thread t1{[&]() {
+        auto f = prom.get_future();
+        f.wait();
+        num_waited.fetch_add(1, std::memory_order_relaxed);
+    }};
+    
+    std::thread t2{[&]() {
+        auto f = prom.get_future();
+        f.wait();
+        num_waited.fetch_add(1, std::memory_order_relaxed);
+    }};
+
+    assert_equal(num_waited.load(std::memory_order_relaxed), 0);
+    prom.set_value(true);
+    t1.join();
+    t2.join();
+    assert_equal(num_waited.load(std::memory_order_relaxed), 2);
+}
+
 TXL_RUN_TESTS()
