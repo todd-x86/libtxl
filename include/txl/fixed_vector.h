@@ -15,7 +15,7 @@ namespace txl
     class fixed_vector
     {
     private:
-        storage<Value, storage_raw_move<Value>> data_[Count];
+        storage<Value, storage_value_move<Value>> data_[Count];
         size_t count_ = 0;
 
         template<size_t S>
@@ -318,7 +318,6 @@ namespace txl
             }
 
             auto index = std::distance(cbegin(), pos);
-            //std::move_backward(begin() + index, end(), end()+1);
             std::move_backward(&data_[index], &data_[size()], &data_[size()+1]);
 
             data_[index].emplace(std::move(value));
@@ -334,7 +333,7 @@ namespace txl
             }
 
             auto index = std::distance(cbegin(), pos);
-            std::move_backward(begin() + index, end()-1, end()+count-1);
+            std::move_backward(&data_[index], &data_[size()-1], &data_[size()+count-1]);
 
             for (auto i = 0; i < count; ++i)
             {
@@ -355,7 +354,7 @@ namespace txl
 
             auto index = std::distance(cbegin(), pos);
             auto orig_index = index;
-            std::move_backward(begin() + index, end()-1, end()+count-1);
+            std::move_backward(&data_[index], &data_[size()-1], &data_[size()+count-1]);
 
             for (auto const & value : iterator_view{begin, end})
             {
@@ -374,7 +373,7 @@ namespace txl
 
             auto index = std::distance(cbegin(), pos);
             auto orig_index = index;
-            std::move_backward(begin() + index, end()-1, end()+list.size()-1);
+            std::move_backward(&data_[index], &data_[size()-1], &data_[size()+list.size()-1]);
 
             for (auto const & value : list)
             {
@@ -393,7 +392,7 @@ namespace txl
             }
 
             auto index = std::distance(cbegin(), pos);
-            std::move_backward(begin() + index, end()-1, end());
+            std::move_backward(&data_[index], &data_[size()-1], &data_[size()]);
 
             data_[index].emplace(std::forward<Args>(args)...);
             ++count_;
@@ -404,7 +403,7 @@ namespace txl
         {
             auto index = std::distance(begin(), pos);
             data_[index].erase();
-            std::move_backward(begin() + index + 1, end()-1, end() - 2);
+            std::move_backward(&data_[index+1], &data_[size()-1], &data_[size()-2]);
             --count_;
             if (index >= count_)
             {
@@ -417,7 +416,7 @@ namespace txl
         {
             auto index = std::distance(cbegin(), pos);
             data_[index].erase();
-            std::move_backward(begin() + index + 1, end()-1, end() - 2);
+            std::move_backward(&data_[index + 1], &data_[size()-1], &data_[size()-2]);
             --count_;
             if (index >= count_)
             {
@@ -436,7 +435,7 @@ namespace txl
                 data_[i].erase();
                 --count_;
             }
-            std::move_backward(last + 1, end()-1, end() - (end_index - begin_index)-1);
+            std::move_backward(&data_[last + 1], &data_[size()-1], &data_[size()-(end_index - begin_index) - 1]);
             if (begin_index >= count_)
             {
                 return end();
@@ -454,7 +453,7 @@ namespace txl
                 data_[i].erase();
                 --count_;
             }
-            std::move_backward(last + 1, cend(), cend() - (end_index - begin_index));
+            std::move_backward(&data_[last + 1], &data_[size()], &data_[size()-(end_index - begin_index)]);
             if (begin_index >= count_)
             {
                 return cend();

@@ -103,7 +103,7 @@ namespace txl
     template<class Value>
     auto storage_value_move<Value>::move(storage_base<Value> & src, storage_base<Value> & dst) -> void
     {
-        dst.val() = std::move(src.val());
+        new (dst.ptr()) Value{std::move(src.val())};
     }
 
     template<class Value>
