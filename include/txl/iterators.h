@@ -85,7 +85,7 @@ namespace txl
             return *this;
         }
         
-        auto operator+(difference_type i) -> circular_iterator
+        auto operator+(difference_type i) const -> circular_iterator
         {
             auto it = circular_iterator{begin_, end_, next_};
             it += i;
@@ -119,7 +119,7 @@ namespace txl
             return their_pos + total_dist - my_pos;
         }
         
-        auto operator-(difference_type i) -> circular_iterator
+        auto operator-(difference_type i) const -> circular_iterator
         {
             auto it = circular_iterator{begin_, end_, next_};
             it -= i;
@@ -148,9 +148,25 @@ namespace txl
     private:
         Value * current_;
     public:
+        template<class Iter>
+        basic_iterator(Iter it)
+            : current_{&(*it)}
+        {
+        }
+
         basic_iterator(Value * current)
             : current_{current}
         {
+        }
+
+        auto operator==(basic_iterator it) const -> bool
+        {
+            return current_ == it.current_;
+        }
+        
+        auto operator!=(basic_iterator it) const -> bool
+        {
+            return not (*this == it);
         }
 
         auto operator->() const -> Value *
@@ -169,10 +185,14 @@ namespace txl
             return *this;
         }
 
-        auto operator+(ptrdiff_t d) -> basic_iterator &
+        auto operator-(basic_iterator it) const -> ptrdiff_t
         {
-            current_ += d;
-            return *this;
+            return current_ - it.current_;
+        }
+
+        auto operator+(ptrdiff_t d) const -> basic_iterator
+        {
+            return {current_ + d};
         }
 
         auto operator--() -> basic_iterator &
@@ -181,10 +201,9 @@ namespace txl
             return *this;
         }
 
-        auto operator-(ptrdiff_t d) -> basic_iterator &
+        auto operator-(ptrdiff_t d) const -> basic_iterator
         {
-            current_ -= d;
-            return *this;
+            return {current_ - d};
         }
     };
     
@@ -209,4 +228,17 @@ namespace txl
             --n;
         }
     }
+}
+
+namespace std
+{
+    template<class T>
+    struct iterator_traits<txl::basic_iterator<T>>
+    {
+        using value_type = T;
+        using reference = T &;
+        using pointer = T *;
+        using iterator_category = bidirectional_iterator_tag;
+        using difference_type = ptrdiff_t;
+    };
 }

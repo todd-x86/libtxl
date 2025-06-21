@@ -84,4 +84,16 @@ TXL_UNIT_TEST(storage)
     assert_equal(sentinel::num_deletes_, 2);
 }
 
+struct thingy
+{
+    std::string name;
+    double value;
+    int x;
+};
+
+TXL_UNIT_TEST(size)
+{
+    assert_equal(sizeof(txl::storage<thingy>), sizeof(thingy));
+}
+
 TXL_RUN_TESTS()

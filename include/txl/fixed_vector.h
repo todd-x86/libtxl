@@ -15,7 +15,7 @@ namespace txl
     class fixed_vector
     {
     private:
-        storage<Value> data_[Count];
+        storage<Value, storage_raw_move<Value>> data_[Count];
         size_t count_ = 0;
 
         template<size_t S>
@@ -223,17 +223,17 @@ namespace txl
 
         auto end() -> iterator
         {
-            return {&(*data_[size()-1])};
+            return {&(*data_[size()])};
         }
 
         auto end() const -> const_iterator
         {
-            return {&(*data_[size()-1])};
+            return {&(*data_[size()])};
         }
 
         auto cend() const noexcept -> const_iterator
         {
-            return {&(*data_[size()-1])};
+            return {&(*data_[size()])};
         }
 
         auto rbegin() -> reverse_iterator
@@ -253,17 +253,17 @@ namespace txl
 
         auto rend() -> reverse_iterator
         {
-            return {basic_iterator<Value>{&(*data_[0])}};
+            return {basic_iterator<Value>{&(*data_[-1])}};
         }
 
         auto rend() const -> const_reverse_iterator
         {
-            return {basic_iterator<Value>{&(*data_[0])}};
+            return {basic_iterator<Value>{&(*data_[-1])}};
         }
 
         auto crend() const noexcept -> const_reverse_iterator
         {
-            return {basic_iterator<Value>{&(*data_[0])}};
+            return {basic_iterator<Value>{&(*data_[-1])}};
         }
 
         auto empty() const -> bool
@@ -302,14 +302,11 @@ namespace txl
                 return {};
             }
 
-            auto index = std::distance(begin(), pos);
+            auto index = std::distance(cbegin(), pos);
+            std::move_backward(pos, cend(), cend() + 1);
 
-            // Insert at the end and move it one-by-one into the correct position
-            data[count_].emplace(value);
-            for (auto i = count_; i > index; --i)
-            {
-                data_[i-1].swap(data_[i]);
-            }
+            data_[index].emplace(value);
+            ++count_;
             return iterator{&(*data_[index])};
         }
 
@@ -320,73 +317,159 @@ namespace txl
                 return {};
             }
 
-            auto index = std::distance(begin(), pos);
+            auto index = std::distance(cbegin(), pos);
+            //std::move_backward(begin() + index, end(), end()+1);
+            std::move_backward(&data_[index], &data_[size()], &data_[size()+1]);
 
-            // Insert at the end and move it one-by-one into the correct position
-            data[count_].emplace(std::move(value));
-            for (auto i = count_; i > index; --i)
-            {
-                data_[i-1].swap(data_[i]);
-            }
+            data_[index].emplace(std::move(value));
+            ++count_;
             return iterator{&(*data_[index])};
         }
 
         auto insert(const_iterator pos, size_type count, Value const & value) -> result<iterator>
         {
+            if (size()+count > Count)
+            {
+                return {};
+            }
+
+            auto index = std::distance(cbegin(), pos);
+            std::move_backward(begin() + index, end()-1, end()+count-1);
+
+            for (auto i = 0; i < count; ++i)
+            {
+                data_[index + i].emplace(value);
+                ++count_;
+            }
+            return iterator{&(*data_[index])};
         }
 
         template<class Iter>
         auto insert(const_iterator pos, Iter begin, Iter end) -> result<iterator>
         {
+            auto count = std::distance(begin, end);
+            if (size() + count > Count)
+            {
+                return {};
+            }
+
+            auto index = std::distance(cbegin(), pos);
+            auto orig_index = index;
+            std::move_backward(begin() + index, end()-1, end()+count-1);
+
+            for (auto const & value : iterator_view{begin, end})
+            {
+                data_[index].emplace(value);
+                ++index;
+            }
+            return iterator{&(*data_[orig_index])};
         }
 
         auto insert(const_iterator pos, std::initializer_list<Value> list) -> result<iterator>
         {
+            if (size() + list.size() > Count)
+            {
+                return {};
+            }
+
+            auto index = std::distance(cbegin(), pos);
+            auto orig_index = index;
+            std::move_backward(begin() + index, end()-1, end()+list.size()-1);
+
+            for (auto const & value : list)
+            {
+                data_[index].emplace(value);
+                ++index;
+            }
+            return iterator{&(*data_[orig_index])};
         }
 
         template<class... Args>
         auto emplace(const_iterator pos, Args && ... args) -> result<iterator>
         {
+            if (size() == Count)
+            {
+                return {};
+            }
+
+            auto index = std::distance(cbegin(), pos);
+            std::move_backward(begin() + index, end()-1, end());
+
+            data_[index].emplace(std::forward<Args>(args)...);
+            ++count_;
+            return iterator{&(*data_[index])};
         }
 
         auto erase(iterator pos) -> iterator
         {
+            auto index = std::distance(begin(), pos);
+            data_[index].erase();
+            std::move_backward(begin() + index + 1, end()-1, end() - 2);
+            --count_;
+            if (index >= count_)
+            {
+                return end();
+            }
+            return iterator{&(*data_[index])};
         }
 
         auto erase(const_iterator pos) -> iterator
         {
+            auto index = std::distance(cbegin(), pos);
+            data_[index].erase();
+            std::move_backward(begin() + index + 1, end()-1, end() - 2);
+            --count_;
+            if (index >= count_)
+            {
+                return end();
+            }
+            return iterator{&(*data_[index])};
         }
 
         auto erase(iterator first, iterator last) -> iterator
         {
+            auto begin_index = std::distance(begin(), first);
+            auto end_index = std::distance(begin(), last);
+
+            for (auto i = begin_index; i < end_index; ++i)
+            {
+                data_[i].erase();
+                --count_;
+            }
+            std::move_backward(last + 1, end()-1, end() - (end_index - begin_index)-1);
+            if (begin_index >= count_)
+            {
+                return end();
+            }
+            return iterator{&(*data_[begin_index])};
         }
 
         auto erase(const_iterator first, const_iterator last) -> iterator
         {
+            auto begin_index = std::distance(cbegin(), first);
+            auto end_index = std::distance(cbegin(), last);
+
+            for (auto i = begin_index; i < end_index; ++i)
+            {
+                data_[i].erase();
+                --count_;
+            }
+            std::move_backward(last + 1, cend(), cend() - (end_index - begin_index));
+            if (begin_index >= count_)
+            {
+                return cend();
+            }
+            return iterator{&(*data_[begin_index])};
         }
 
         auto push_back(Value const & value) -> result<iterator>
         {
-            if (count_ == Count)
-            {
-                return false;
-            }
-
-            data_[size()].emplace(value);
-            ++count_;
-            return true;
+            return emplace_back(value);
         }
 
         auto push_back(Value && value) -> result<iterator>
         {
-            if (count_ == Count)
-            {
-                return false;
-            }
-
-            data_[size()].emplace(std::move(value));
-            ++count_;
-            return true;
+            return emplace_back(std::move(value));
         }
 
         template<class... Args>
@@ -394,12 +477,12 @@ namespace txl
         {
             if (count_ == Count)
             {
-                return false;
+                return {};
             }
 
             data_[size()].emplace(std::forward<Args>(args)...);
             ++count_;
-            return true;
+            return {iterator{&(*data_[size()-1])}};
         }
 
         auto pop_back() -> void
