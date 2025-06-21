@@ -51,7 +51,10 @@ namespace txl
             }
         }
     public:
-        result() = default;
+        result()
+        {
+        }
+
         result(Value && value)
             : value_(std::move(value))
             , flags_(ASSIGNED)

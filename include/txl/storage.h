@@ -4,9 +4,28 @@
 
 namespace txl
 {
+    template<class>
+    class storage_base;
+
     template<class Value>
-    class storage
+    struct storage_value_move final
     {
+        static auto move(storage_base<Value> & src, storage_base<Value> & dst) -> void;
+    };
+
+    template<class Value>
+    struct storage_raw_move final
+    {
+        static auto move(storage_base<Value> & src, storage_base<Value> & dst) -> void;
+    };
+
+    template<class Value>
+    class storage_base
+    {
+        template<class>
+        friend struct storage_raw_move;
+        template<class>
+        friend struct storage_value_move;
     private:
         alignas(Value) std::byte val_[sizeof(Value)];
     protected:
@@ -15,41 +34,53 @@ namespace txl
         auto ptr() const -> Value const * { return reinterpret_cast<Value const *>(&val_[0]); }
         auto val() const -> Value const & { return *ptr(); }
 
-        auto raw_copy(storage const & s) -> void
+        auto raw_copy(storage_base const & s) -> void
         {
             std::copy(&s.val_[0], &s.val_[sizeof(Value)], &val_[0]);
         }
+
+        auto raw_swap(storage_base & s) -> void
+        {
+            std::swap(s.val_, val_);
+        }
     public:
+        auto operator*() -> Value & { return val(); }
+        auto operator*() const -> Value const & { return val(); }
+        auto operator->() -> Value * { return ptr(); }
+        auto operator->() const -> Value const * { return ptr(); }
+    };
+
+    template<class Value, class MovePolicy = storage_value_move<Value>>
+    struct storage : storage_base<Value>
+    {
         storage() = default;
 
         storage(storage const & s)
         {
-            val() = s.val();
+            this->val() = s.val();
         }
 
         storage(storage && s)
         {
-            val() = std::move(s.val());
+            MovePolicy::move(s, *this);
         }
         
-        virtual ~storage() = default;
-
         template<class... Args>
         auto emplace(Args && ... args) -> void
         {
-            new (ptr()) Value{std::forward<Args>(args)...};
+            new (this->ptr()) Value{std::forward<Args>(args)...};
         }
 
         auto erase() -> void
         {
-            val().~Value();
+            this->val().~Value();
         }
 
         auto operator=(storage const & s) -> storage &
         {
             if (&s != this)
             {
-                val() = s.val();
+                this->val() = s.val();
             }
             return *this;
         }
@@ -58,24 +89,31 @@ namespace txl
         {
             if (&s != this)
             {
-                val() = std::move(s.val());
+                MovePolicy::move(s, *this);
             }
             return *this;
         }
 
         auto swap(storage & s) -> void
         {
-            std::swap(s.val(), val());
+            std::swap(s.val(), this->val());
         }
-
-        auto operator*() -> Value & { return val(); }
-        auto operator*() const -> Value const & { return val(); }
-        auto operator->() -> Value * { return ptr(); }
-        auto operator->() const -> Value const * { return ptr(); }
     };
+    
+    template<class Value>
+    auto storage_value_move<Value>::move(storage_base<Value> & src, storage_base<Value> & dst) -> void
+    {
+        dst.val() = std::move(src.val());
+    }
 
     template<class Value>
-    class safe_storage : public storage<Value>
+    auto storage_raw_move<Value>::move(storage_base<Value> & src, storage_base<Value> & dst) -> void
+    {
+        dst.raw_swap(src);
+    }
+
+    template<class Value, class MovePolicy = storage_value_move<Value>>
+    class safe_storage : protected storage<Value, MovePolicy>
     {
     private:
         bool emplaced_ = false;
@@ -99,7 +137,7 @@ namespace txl
             erase();
             if (s.emplaced_)
             {
-                this->val() = std::move(s.val());
+                MovePolicy::move(s, *this);
                 std::swap(emplaced_, s.emplaced_);
             }
             else
@@ -120,7 +158,7 @@ namespace txl
             move(std::move(s));
         }
         
-        ~safe_storage()
+        virtual ~safe_storage()
         {
             erase();
         }
