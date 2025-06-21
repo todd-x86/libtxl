@@ -228,6 +228,18 @@ namespace txl
             --n;
         }
     }
+
+    template<class InputIter, class OutputIter>
+    inline auto move_backward(InputIter src_begin, InputIter src_end, OutputIter dst_end) -> void
+    {
+        using value_type = typename std::iterator_traits<InputIter>::value_type;
+        while (src_end != src_begin)
+        {
+            --src_end;
+            --dst_end;
+            new (&(*dst_end)) value_type{std::move(*src_end)};
+        }
+    }
 }
 
 namespace std
