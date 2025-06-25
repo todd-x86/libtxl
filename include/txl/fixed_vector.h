@@ -14,37 +14,6 @@ namespace txl
     template<class Value, size_t Count>
     class fixed_vector
     {
-    private:
-        storage<Value, storage_value_move<Value>> data_[Count];
-        size_t count_ = 0;
-
-        template<size_t S>
-        auto copy(fixed_vector<Value, S> const & other) -> void
-        {
-            for (auto const & v : other)
-            {
-                push_back(v);
-            }
-        }
-
-        template<size_t S>
-        auto move(fixed_vector<Value, S> && other) -> void
-        {
-            for (size_t i = 0; i < std::min(Count, other.size()); ++i)
-            {
-                data_[count_] = std::move(other.data_[i]);
-                ++count_;
-            }
-
-            // Destruct excess values
-            for (size_t i = Count; i < other.size(); ++i)
-            {
-                other.data_[i].erase();
-            }
-
-            // Sacrificing stability here by not moving count_ until the end of the move operation
-            other.count_ = 0;
-        }
     public:
         using value_type = Value;
         using size_type = size_t;
@@ -58,14 +27,46 @@ namespace txl
         using reverse_iterator = std::reverse_iterator<iterator>;
         using const_reverse_iterator = std::reverse_iterator<const_iterator>;
 
+    private:
+        storage<Value, storage_value_move<Value>> data_[Count];
+        size_type count_ = 0;
+
+        template<size_t S>
+        auto copy(fixed_vector<Value, S> const & other) -> void
+        {
+            for (auto const & v : other)
+            {
+                push_back(v);
+            }
+        }
+
+        template<size_t S>
+        auto move(fixed_vector<Value, S> && other) -> void
+        {
+            for (size_type i = 0; i < std::min(Count, other.size()); ++i)
+            {
+                data_[count_] = std::move(other.data_[i]);
+                ++count_;
+            }
+
+            // Destruct excess values
+            for (size_type i = Count; i < other.size(); ++i)
+            {
+                other.data_[i].erase();
+            }
+
+            // Sacrificing stability here by not moving count_ until the end of the move operation
+            other.count_ = 0;
+        }
+    public:
         fixed_vector() = default;
         
-        fixed_vector(size_t count)
+        fixed_vector(size_type count)
             : fixed_vector(count, Value{})
         {
         }
 
-        fixed_vector(size_t count, Value const & default_val)
+        fixed_vector(size_type count, Value const & default_val)
             : count_{std::min(count, Count)}
         {
             assign(count_, default_val);
@@ -123,10 +124,10 @@ namespace txl
             return *this;
         }
 
-        auto assign(size_t count, Value const & value) -> void
+        auto assign(size_type count, Value const & value) -> void
         {
             clear();
-            for (size_t i = 0; i < std::min(count, Count); ++i)
+            for (size_type i = 0; i < std::min(count, Count); ++i)
             {
                 push_back(value);
             }
@@ -291,7 +292,7 @@ namespace txl
 
         auto clear() -> void
         {
-            for (size_t i = 0; i < count_; ++i)
+            for (size_type i = 0; i < count_; ++i)
             {
                 data_[i].erase();
             }
@@ -338,7 +339,7 @@ namespace txl
             auto index = std::distance(cbegin(), pos);
             std::move_backward(&data_[index], &data_[size()], &data_[size()+count]);
 
-            for (auto i = 0; i < count; ++i)
+            for (size_type i = 0; i < count; ++i)
             {
                 data_[index + i].emplace(value);
                 ++count_;
@@ -404,7 +405,7 @@ namespace txl
 
         auto erase(iterator pos) -> iterator
         {
-            auto index = std::distance(begin(), pos);
+            size_type index = std::distance(begin(), pos);
             data_[index].erase();
             std::move_backward(&data_[index+1], &data_[size()], &data_[size()-1]);
             --count_;
