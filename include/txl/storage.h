@@ -68,7 +68,7 @@ namespace txl
         template<class... Args>
         auto emplace(Args && ... args) -> void
         {
-            new (this->ptr()) Value{std::forward<Args>(args)...};
+            new (this->ptr()) Value(std::forward<Args>(args)...);
         }
 
         auto erase() -> void

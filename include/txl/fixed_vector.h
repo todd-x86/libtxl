@@ -41,6 +41,9 @@ namespace txl
             {
                 other.data_[i].erase();
             }
+
+            // Sacrificing stability here by not moving count_ until the end of the move operation
+            other.count_ = 0;
         }
     public:
         using value_type = Value;
@@ -68,7 +71,7 @@ namespace txl
             assign(count_, default_val);
         }
 
-        template<class Iter>
+        template<class Iter, class = std::enable_if<std::is_convertible_v<typename std::iterator_traits<Iter>::iterator_category, std::input_iterator_tag>>>
         fixed_vector(Iter begin, Iter end)
         {
             assign(begin, end);
@@ -129,11 +132,11 @@ namespace txl
             }
         }
 
-        template<class Iter>
+        template<class Iter, class = std::enable_if<std::is_convertible_v<typename std::iterator_traits<Iter>::iterator_category, std::input_iterator_tag>>>
         auto assign(Iter begin, Iter end) -> void
         {
             clear();
-            for (auto const & v : iterator_view{begin, end})
+            for (auto const & v : make_iterator_view(begin, end))
             {
                 push_back(v);
             }
@@ -238,32 +241,32 @@ namespace txl
 
         auto rbegin() -> reverse_iterator
         {
-            return {basic_iterator<Value>{&(*data_[size()-1])}};
+            return reverse_iterator{end()};
         }
 
         auto rbegin() const -> const_reverse_iterator
         {
-            return {basic_iterator<Value>{&(*data_[size()-1])}};
+            return const_reverse_iterator{end()};
         }
 
         auto crbegin() const noexcept -> const_reverse_iterator
         {
-            return {basic_iterator<Value>{&(*data_[size()-1])}};
+            return const_reverse_iterator{cend()};
         }
 
         auto rend() -> reverse_iterator
         {
-            return {basic_iterator<Value>{&(*data_[-1])}};
+            return reverse_iterator{begin()};
         }
 
         auto rend() const -> const_reverse_iterator
         {
-            return {basic_iterator<Value>{&(*data_[-1])}};
+            return const_reverse_iterator{begin()};
         }
 
         auto crend() const noexcept -> const_reverse_iterator
         {
-            return {basic_iterator<Value>{&(*data_[-1])}};
+            return const_reverse_iterator{cbegin()};
         }
 
         auto empty() const -> bool
@@ -333,7 +336,7 @@ namespace txl
             }
 
             auto index = std::distance(cbegin(), pos);
-            std::move_backward(&data_[index], &data_[size()-1], &data_[size()+count-1]);
+            std::move_backward(&data_[index], &data_[size()], &data_[size()+count]);
 
             for (auto i = 0; i < count; ++i)
             {
@@ -343,7 +346,7 @@ namespace txl
             return iterator{&(*data_[index])};
         }
 
-        template<class Iter>
+        template<class Iter, class = std::enable_if<std::is_convertible_v<typename std::iterator_traits<Iter>::iterator_category, std::input_iterator_tag>>>
         auto insert(const_iterator pos, Iter begin, Iter end) -> result<iterator>
         {
             auto count = std::distance(begin, end);
@@ -354,9 +357,9 @@ namespace txl
 
             auto index = std::distance(cbegin(), pos);
             auto orig_index = index;
-            std::move_backward(&data_[index], &data_[size()-1], &data_[size()+count-1]);
+            std::move_backward(&data_[index], &data_[size()], &data_[size()+count]);
 
-            for (auto const & value : iterator_view{begin, end})
+            for (auto const & value : make_iterator_view(begin, end))
             {
                 data_[index].emplace(value);
                 ++index;
@@ -373,7 +376,7 @@ namespace txl
 
             auto index = std::distance(cbegin(), pos);
             auto orig_index = index;
-            std::move_backward(&data_[index], &data_[size()-1], &data_[size()+list.size()-1]);
+            std::move_backward(&data_[index], &data_[size()], &data_[size()+list.size()]);
 
             for (auto const & value : list)
             {
@@ -392,7 +395,7 @@ namespace txl
             }
 
             auto index = std::distance(cbegin(), pos);
-            std::move_backward(&data_[index], &data_[size()-1], &data_[size()]);
+            std::move_backward(&data_[index], &data_[size()], &data_[size()+1]);
 
             data_[index].emplace(std::forward<Args>(args)...);
             ++count_;
@@ -403,7 +406,7 @@ namespace txl
         {
             auto index = std::distance(begin(), pos);
             data_[index].erase();
-            std::move_backward(&data_[index+1], &data_[size()-1], &data_[size()-2]);
+            std::move_backward(&data_[index+1], &data_[size()], &data_[size()-1]);
             --count_;
             if (index >= count_)
             {
@@ -416,7 +419,7 @@ namespace txl
         {
             auto index = std::distance(cbegin(), pos);
             data_[index].erase();
-            std::move_backward(&data_[index + 1], &data_[size()-1], &data_[size()-2]);
+            std::move_backward(&data_[index + 1], &data_[size()], &data_[size()-1]);
             --count_;
             if (index >= count_)
             {
@@ -427,24 +430,12 @@ namespace txl
 
         auto erase(iterator first, iterator last) -> iterator
         {
-            auto begin_index = std::distance(begin(), first);
-            auto end_index = std::distance(begin(), last);
-
-            for (auto i = begin_index; i < end_index; ++i)
-            {
-                data_[i].erase();
-                --count_;
-            }
-            std::move_backward(&data_[last + 1], &data_[size()-1], &data_[size()-(end_index - begin_index) - 1]);
-            if (begin_index >= count_)
-            {
-                return end();
-            }
-            return iterator{&(*data_[begin_index])};
+            return erase(cbegin() + (first - begin()), cbegin() + (last - begin()));
         }
 
         auto erase(const_iterator first, const_iterator last) -> iterator
         {
+            auto old_size = size();
             auto begin_index = std::distance(cbegin(), first);
             auto end_index = std::distance(cbegin(), last);
 
@@ -453,10 +444,10 @@ namespace txl
                 data_[i].erase();
                 --count_;
             }
-            std::move_backward(&data_[last + 1], &data_[size()], &data_[size()-(end_index - begin_index)]);
+            std::move_backward(&data_[end_index], &data_[old_size], &data_[old_size-(end_index - begin_index)]);
             if (begin_index >= count_)
             {
-                return cend();
+                return end();
             }
             return iterator{&(*data_[begin_index])};
         }
