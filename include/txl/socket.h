@@ -10,6 +10,7 @@
 #include <txl/socket_option.h>
 
 #include <sys/socket.h>
+#include <fcntl.h>
 #include <unistd.h>
 
 namespace txl
@@ -201,6 +202,25 @@ namespace txl
         auto set_option(socket_option::option<T> opt, T const & value) -> result<void>
         {
             return set_option(opt.level, opt.opt_name, value);
+        }
+
+        auto set_nonblocking(bool value) -> result<void>
+        {
+            auto cur_flags = ::fcntl(fd(), F_GETFL, 0);
+            auto res = handle_system_error(cur_flags);
+            if (not res)
+            {
+                return res;
+            }
+            if (value)
+            {
+                cur_flags |= O_NONBLOCK;
+            }
+            else
+            {
+                cur_flags &= ~O_NONBLOCK;
+            }
+            return handle_system_error(::fcntl(fd(), F_SETFL, cur_flags));
         }
     };
 
