@@ -24,9 +24,9 @@ namespace txl
         file_base(file_base const &) = delete;
 
         file_base(file_base && f)
-            : file_base()
+            : file_base(f.fd_)
         {
-            std::swap(f.fd_, fd_);
+            f.fd_ = -1;
         }
 
         virtual ~file_base()
@@ -42,6 +42,10 @@ namespace txl
         {
             if (this != &f)
             {
+                if (is_open())
+                {
+                    close();
+                }
                 std::swap(f.fd_, fd_);
             }
             return *this;
@@ -54,10 +58,10 @@ namespace txl
         auto close() -> result<void>
         {
             auto result = handle_system_error(::close(fd_));
-            if (result)
-            {
-                fd_ = -1;
-            }
+            // Signify it's closed even if close() returns an error.
+            // close() only returns an error if it's already been closed
+            // or was an invalid FD.
+            fd_ = -1;
             return result;
         }
     };

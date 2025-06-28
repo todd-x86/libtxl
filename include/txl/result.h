@@ -128,6 +128,25 @@ namespace txl
         auto is_error() const -> bool { return flags_ & IS_ERROR; }
         auto value() const -> Value const & { return value_; }
         auto error() const -> std::error_code const & { return error_; }
+        
+        template<class ValueOrFunc>
+        auto ignore(std::error_code err, ValueOrFunc && value_or_func) -> result
+        {
+            if (is_error() and error() == err)
+            {
+                if constexpr (std::is_same_v<ValueOrFunc, Value> or std::is_convertible_v<ValueOrFunc, Value>)
+                {
+                    // Value
+                    return {std::move(value_or_func)};
+                }
+                else
+                {
+                    // Function
+                    return {value_or_func()};
+                }
+            }
+            return *this;
+        }
 
         auto or_throw() -> Value &&
         {
@@ -204,6 +223,15 @@ namespace txl
         auto empty() const -> bool { return not is_assigned(); }
         auto is_error() const -> bool { return static_cast<bool>(error_); }
         auto error() const -> std::error_code const & { return error_; }
+
+        auto ignore(std::error_code err) -> result
+        {
+            if (is_error() and error() == err)
+            {
+                return {};
+            }
+            return *this;
+        }
 
         auto or_throw() -> void
         {

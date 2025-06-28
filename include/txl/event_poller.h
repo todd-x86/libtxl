@@ -14,6 +14,7 @@
 #include <chrono>
 #include <cstdint>
 #include <optional>
+#include <ostream>
 #include <utility>
 #include <vector>
 
@@ -34,11 +35,117 @@ namespace txl
         exclusive = EPOLLEXCLUSIVE,
 #endif
     };
-
+    
     inline auto operator|(event_type x, event_type y) -> event_type
     {
         auto xy = static_cast<uint32_t>(x) | static_cast<uint32_t>(y);
         return static_cast<event_type>(xy);
+    }
+
+    inline auto operator&(event_type x, event_type y) -> event_type
+    {
+        auto xy = static_cast<uint32_t>(x) & static_cast<uint32_t>(y);
+        return static_cast<event_type>(xy);
+    }
+
+    inline auto operator<<(std::ostream & os, event_type t) -> std::ostream &
+    {
+        auto comma = false;
+        os << '{';
+        if (static_cast<uint32_t>(t & event_type::in) != 0)
+        {
+            if (comma)
+            {
+                os << ',';
+            }
+            os << "in";
+            comma = true;
+        }
+        if (static_cast<uint32_t>(t & event_type::out) != 0)
+        {
+            if (comma)
+            {
+                os << ',';
+            }
+            os << "out";
+            comma = true;
+        }
+        if (static_cast<uint32_t>(t & event_type::read_hangup) != 0)
+        {
+            if (comma)
+            {
+                os << ',';
+            }
+            os << "read_hangup";
+            comma = true;
+        }
+        if (static_cast<uint32_t>(t & event_type::priority) != 0)
+        {
+            if (comma)
+            {
+                os << ',';
+            }
+            os << "priority";
+            comma = true;
+        }
+        if (static_cast<uint32_t>(t & event_type::error) != 0)
+        {
+            if (comma)
+            {
+                os << ',';
+            }
+            os << "error";
+            comma = true;
+        }
+        if (static_cast<uint32_t>(t & event_type::hangup) != 0)
+        {
+            if (comma)
+            {
+                os << ',';
+            }
+            os << "hangup";
+            comma = true;
+        }
+        if (static_cast<uint32_t>(t & event_type::edge) != 0)
+        {
+            if (comma)
+            {
+                os << ',';
+            }
+            os << "edge";
+            comma = true;
+        }
+        if (static_cast<uint32_t>(t & event_type::one_shot) != 0)
+        {
+            if (comma)
+            {
+                os << ',';
+            }
+            os << "one_shot";
+            comma = true;
+        }
+        if (static_cast<uint32_t>(t & event_type::wakeup) != 0)
+        {
+            if (comma)
+            {
+                os << ',';
+            }
+            os << "wakeup";
+            comma = true;
+        }
+#ifdef EPOLLEXCLUSIVE
+        if (static_cast<uint32_t>(t & event_type::exclusive) != 0)
+        {
+            if (comma)
+            {
+                os << ',';
+            }
+            os << "exclusive";
+            comma = true;
+        }
+#endif
+        os << '}';
+        return os;
     }
 
     class event_tag final
@@ -47,14 +154,42 @@ namespace txl
     private:
         ::epoll_data data_{};
     public:
+        static auto from_fd(int v) -> event_tag
+        {
+            event_tag tag{};
+            tag.fd(v);
+            return tag;
+        }
+
         auto fd() const -> int { return data_.fd; }
         auto fd(int v) -> void { data_.fd = v; }
+        
+        static auto from_ptr(void * v) -> event_tag
+        {
+            event_tag tag{};
+            tag.ptr(v);
+            return tag;
+        }
         
         auto ptr() const -> void * { return data_.ptr; }
         auto ptr(void * v) -> void { data_.ptr = v; }
         
+        static auto from_u32(uint32_t v) -> event_tag
+        {
+            event_tag tag{};
+            tag.u32(v);
+            return tag;
+        }
+        
         auto u32() const -> uint32_t { return data_.u32; }
         auto u32(uint32_t v) -> void { data_.u32 = v; }
+        
+        static auto from_u64(uint64_t v) -> event_tag
+        {
+            event_tag tag{};
+            tag.u64(v);
+            return tag;
+        }
         
         auto u64() const -> uint64_t { return data_.u64; }
         auto u64(uint64_t v) -> void { data_.u64 = v; }
@@ -69,6 +204,8 @@ namespace txl
     struct event_data : private ::epoll_event
     {
         auto events() const -> event_type { return static_cast<event_type>(::epoll_event::events); }
+        auto has_one_of(event_type t) const -> bool { return static_cast<uint32_t>(events() & t) != 0; }
+        auto has_all(event_type t) const -> bool { return (events() & t) == t; }
         auto fd() const -> int { return data.fd; }
     };
 
