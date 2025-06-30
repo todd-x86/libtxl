@@ -147,7 +147,8 @@ namespace txl
             return handle_system_error(res);
         }
 
-        auto accept(socket_address & out_addr, accept_flags flags = accept_flags::none) -> result<socket>
+        template<class SocketClass = socket>
+        auto accept(socket_address & out_addr, accept_flags flags = accept_flags::none) -> result<SocketClass>
         {
             ::socklen_t out_sockaddr_len = sizeof(out_addr.addr_);
             auto res = ::accept4(fd_, reinterpret_cast<::sockaddr *>(&out_addr.addr_), &out_sockaddr_len, static_cast<int>(flags));
@@ -155,13 +156,14 @@ namespace txl
             {
                 return err.error();
             }
-            return socket(res);
+            return SocketClass(res);
         }
         
-        auto accept(accept_flags flags = accept_flags::none) -> result<socket>
+        template<class SocketClass = socket>
+        auto accept(accept_flags flags = accept_flags::none) -> result<SocketClass>
         {
             socket_address sa{};
-            return accept(sa, flags);
+            return accept<SocketClass>(sa, flags);
         }
 
         auto bind(socket_address const & sa) -> result<void>
@@ -226,6 +228,8 @@ namespace txl
 
     struct tcp_socket : socket
     {
+        using socket::socket;
+
         tcp_socket(bool open_socket = false)
             : socket()
         {

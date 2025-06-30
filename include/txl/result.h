@@ -126,6 +126,7 @@ namespace txl
         auto is_assigned() const -> bool { return flags_ & ASSIGNED; }
         auto empty() const -> bool { return not is_assigned(); }
         auto is_error() const -> bool { return flags_ & IS_ERROR; }
+        auto is_error(int err_code) const -> bool { return is_error() and error().value() == err_code; }
         auto value() const -> Value const & { return value_; }
         auto error() const -> std::error_code const & { return error_; }
         
