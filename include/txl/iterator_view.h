@@ -20,6 +20,15 @@ namespace txl
         {
         }
 
+        template<class Callback>
+        auto foreach(Callback && callback) -> void
+        {
+            for (auto const & el : *this)
+            {
+                callback(el);
+            }
+        }
+
         auto begin() noexcept -> Iter { return begin_; }
         auto end() noexcept -> Iter { return end_; }
         auto begin() const noexcept -> Iter { return begin_; }
