@@ -16,6 +16,8 @@ TXL_UNIT_TEST(options)
     char const * args[4] = {"EXEFILE", "-x", "flippity flip", "-y"};
     opts.parse(sizeof(args) / sizeof(char const *), args);
 
+    assert_equal(opts.get_usage_string("a.out"), "Usage: a.out [ -x <str> ] [ -y ]");
+
     assert_equal(x, "flippity flip");
     assert_equal(y, true);
 }

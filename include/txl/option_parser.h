@@ -63,25 +63,24 @@ namespace txl
             }
         }
     public:
-        using UnknownArgFunc = std::function<void(std::string_view)>;
+        struct parser_options final
+        {
+            using UnknownArgFunc = std::function<void(std::string_view)>;
 
-        auto add_flag(char flag, bool & value) -> void
+            UnknownArgFunc on_unknown_arg;
+        };
+
+        auto add_flag(char flag, bool & value) -> bool
         {
             value = false;
             auto [_, emplaced] = opts_.emplace(flag, option{value});
-            if (not emplaced)
-            {
-                throw std::runtime_error{"flag already added"};
-            }
+            return emplaced;
         }
         
-        auto add_flag(char flag, std::string & value) -> void
+        auto add_flag(char flag, std::string & value) -> bool
         {
             auto [_, emplaced] = opts_.emplace(flag, option{value});
-            if (not emplaced)
-            {
-                throw std::runtime_error{"flag already added"};
-            }
+            return emplaced;
         }
 
         auto get_usage_string(std::string_view exe) const -> std::string
@@ -105,12 +104,12 @@ namespace txl
             return ss.str();
         }
 
-        auto parse(int argc, char const * argv[], UnknownArgFunc && on_unknown_arg = nullptr) -> void
+        auto parse(int argc, char const * argv[], parser_options * opts = nullptr) -> void
         {
-            parse(make_iterator_view(&argv[1], &argv[argc]), std::move(on_unknown_arg));
+            parse(make_iterator_view(&argv[1], &argv[argc]), opts);
         }
 
-        auto parse(iterator_view<char const **> const & args, UnknownArgFunc && on_unknown_arg = nullptr) -> void
+        auto parse(iterator_view<char const **> const & args, parser_options * opts = nullptr) -> void
         {
             auto it = args.begin();
             while (it != args.end())
@@ -118,9 +117,9 @@ namespace txl
                 std::string_view arg{*it};
                 if (arg.size() != 2 or arg[0] != '-')
                 {
-                    if (on_unknown_arg)
+                    if (opts and opts->on_unknown_arg)
                     {
-                        on_unknown_arg(arg);
+                        opts->on_unknown_arg(arg);
                     }
                     ++it;
                     continue;
@@ -133,14 +132,15 @@ namespace txl
                     if (it == args.end() and not flag_iter->second.is_flag())
                     {
                         throw std::runtime_error{"Argument required"};
+                        continue;
                     }
                     process_option(flag_iter->second, it);
                     continue;
                 }
 
-                if (on_unknown_arg)
+                if (opts and opts->on_unknown_arg)
                 {
-                    on_unknown_arg(arg);
+                    opts->on_unknown_arg(arg);
                 }
                 ++it;
             }
