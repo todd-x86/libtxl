@@ -44,7 +44,7 @@ TXL_UNIT_TEST(storage_union)
 TXL_UNIT_TEST(storage_union_leak_free)
 {
     auto v = txl::storage_union<int, leak_free, std::string>{};
-    assert_equal(sizeof(txl::storage_union<int, leak_free, std::string>), 40);
+    assert_equal(sizeof(txl::storage_union<int, leak_free, std::string>), std::max(sizeof(int), std::max(sizeof(leak_free), sizeof(std::string))) + sizeof(void *));
 
     v = 12;
     assert_equal(static_cast<int>(v), 12);
