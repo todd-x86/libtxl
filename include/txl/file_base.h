@@ -1,11 +1,15 @@
 #pragma once
 
+#include <txl/io.h>
+#include <txl/patterns.h>
 #include <txl/system_error.h>
 #include <txl/result.h>
 #include <txl/handle_error.h>
 
+#include <sys/sendfile.h>
 #include <unistd.h>
 #include <algorithm>
+#include <optional>
 
 namespace txl
 {
@@ -64,5 +68,5 @@ namespace txl
             fd_ = -1;
             return result;
         }
-    };
+    };    
 }

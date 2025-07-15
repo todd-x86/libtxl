@@ -1,7 +1,7 @@
 #pragma once
 
 #include <txl/result.h>
-#include <txl/file_base.h>
+#include <txl/sendfile.h>
 #include <txl/io.h>
 #include <txl/buffer_ref.h>
 #include <txl/system_error.h>
@@ -16,7 +16,7 @@
 
 namespace txl
 {
-    class file : public file_base
+    class file : public sendfile_file_base
                , public reader
                , public writer
     {

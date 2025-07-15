@@ -179,4 +179,22 @@ TXL_UNIT_TEST(file_truncate)
     assert_equal(std::string_view{s}, "\0\0\0\0\0\0\0\0\0"sv);
 }
 
+TXL_UNIT_TEST(file_copy_to)
+{
+    auto wr = txl::file{"test.txt", "w"};
+
+    size_t num_written = 0;
+    for (auto i = 0; i < (65536/5)+1; ++i)
+    {
+        num_written += wr.write("Hello"sv).or_throw().size();
+    }
+    wr.close();
+    
+    auto r1 = txl::file{"test.txt", "r"};
+    auto w1 = txl::file{"test2.txt", "w"};
+    auto res = r1.copy_to(w1, num_written).or_throw();
+
+    assert_equal(res, num_written);
+}
+
 TXL_RUN_TESTS()

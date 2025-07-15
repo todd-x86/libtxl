@@ -107,6 +107,14 @@ namespace txl
         return old_value;
     }
 
+    /**
+     * Holds a value from an atomic and performs a compare_exchange_weak()
+     * operation if the value has changed since the atomic was acquired.
+     *
+     * Uses acquire-release semantics.
+     *
+     * \tparam T atomic value type
+     */
     template<class T>
     class acquire_lock final
     {
@@ -115,6 +123,14 @@ namespace txl
         T old_value_;
         T new_value_;
     public:
+        /**
+         * Constructs a new acquire_lock on an atomic.  The name is a misnomer
+         * since no actual locking is performed. A copy of the value is
+         * acquired from the supplied atomic and replaced at destruction if
+         * the value has changed.
+         *
+         * \param value atomic value to load and save
+         */
         acquire_lock(std::atomic<T> & value)
             : atom_{value}
             , old_value_{value.load(std::memory_order_acquire)}

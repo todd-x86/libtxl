@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <type_traits>
 #include <map>
+#include <optional>
 #include <unordered_map>
 #include <functional>
 
@@ -313,5 +314,27 @@ namespace txl
             res.emplace(key, value);
         }
         return res;
+    }
+
+    template<class Value>
+    inline auto optional_to_ptr(std::optional<Value> const & opt) -> Value const *
+    {
+        if (opt)
+        {
+            return &opt.value();
+        }
+
+        return nullptr;
+    }
+
+    template<class Value>
+    inline auto optional_to_ptr(std::optional<Value> & opt) -> Value *
+    {
+        if (opt)
+        {
+            return &opt.value();
+        }
+
+        return nullptr;
     }
 }
