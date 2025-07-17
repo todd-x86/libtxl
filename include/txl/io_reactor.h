@@ -30,25 +30,45 @@ namespace txl
     class io_completer final
     {
     private:
-        std::mutex mutex_;
-        std::condition_variable cond_;
+        struct impl final
+        {
+            std::mutex mutex_;
+            std::condition_variable cond_;
+            
+            auto wait() -> void
+            {
+                std::unique_lock l{mutex_};
+                cond_.wait(l);
+            }
+
+            auto set_complete() -> void
+            {
+                cond_.notify_all();
+            }
+        };
+
+        std::shared_ptr<impl> impl_;
     public:
+        io_completer()
+            : impl_{std::make_shared<impl>()}
+        {
+        }
+
         auto wait() -> void
         {
-            std::unique_lock l{mutex_};
-            cond_.wait(l);
+            impl_->wait();
         }
 
         auto set_complete() -> void
         {
-            cond_.notify_all();
+            impl_->set_complete();
         }
     };
 
     class io_task final
     {
     private:
-        io_completer & completer_;
+        io_completer completer_;
     public:
         io_task(io_completer & completer)
             : completer_(completer)
