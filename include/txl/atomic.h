@@ -138,6 +138,9 @@ namespace txl
         {
         }
 
+        /**
+         * Compare-and-exchanges atomic if the value has changed.
+         */
         ~acquire_lock()
         {
             if (old_value_ != new_value_)
@@ -146,13 +149,31 @@ namespace txl
             }
         }
         
+        /**
+         * Mutable accessor.
+         */
         T & value() { return new_value_; }
+        /**
+         * Const accessor.
+         */
         T const & value() const { return new_value_; }
 
+        /**
+         * Mutable accessor.
+         */
         T & operator*() { return new_value_; }
+        /**
+         * Const accessor.
+         */
         T const & operator*() const { return new_value_; }
         
+        /**
+         * Mutable accessor.
+         */
         T * operator->() { return &new_value_; }
+        /**
+         * Const accessor.
+         */
         T const * operator->() const { return &new_value_; }
     };
 }

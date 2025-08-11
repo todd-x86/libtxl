@@ -11,14 +11,27 @@
 
 namespace txl
 {
+    /**
+     * Represents a string_view-like range over a pointer
+     * to a buffer and a bounded length.
+     */
     class buffer_ref final
     {
     private:
         void * buffer_ = nullptr;
         size_t length_ = 0;
     public:
+        /**
+         * Constructs an empty buffer_ref with no underlying buffer.
+         */
         buffer_ref() = default;
 
+        /**
+         * Constructs a buffer_ref on top of a string_view.
+         *
+         * \tparam Char string_view character type
+         * \param s string_view
+         */
         template<class Char>
         buffer_ref(std::basic_string_view<Char> s)
             : buffer_ref(static_cast<void *>(const_cast<char *>(s.data())), s.size())
