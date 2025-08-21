@@ -14,7 +14,13 @@ TXL_UNIT_TEST(simple_tar)
             break;
         }
         auto e = pending.or_throw();
-        std::cout << '"' << e.filename() << '"' << " -- > " << e.size() << std::endl;
+        std::cout << txl::time::format_time_point(e.modification_time()) << '"' << e.filename() << '"' << " -- > " << e.size() << " [" << (e.type() == txl::tar_entry::directory ? "dir" : "file") << "] " << std::endl;
+        if (e.type() == txl::tar_entry::file)
+        {
+            auto data_rdr = e.open_data_reader(inp_file);
+            auto data = txl::read_string(data_rdr, e.size());
+            std::cout << "\"" << *data << "\" " << e.size() << std::endl;
+        }
     }
 }
 

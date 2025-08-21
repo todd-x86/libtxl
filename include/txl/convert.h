@@ -5,6 +5,8 @@
 #include <txl/result_error.h>
 #include <txl/type_info.h>
 
+#include <limits>
+#include <type_traits>
 #include <string_view>
 
 namespace txl
@@ -30,13 +32,13 @@ namespace txl
         using std::string_view::string_view;
     };
     
-    template<class Dst, class Src>
-    inline auto convert_to(Src const & src) -> convert_result<Dst>;
+    //template<class Dst, class Src>
+    //inline auto convert_to(Src const & src) -> convert_result<Dst>;
 
-    template<>
-    inline auto convert_to<size_t>(octet_string_view const & src) -> convert_result<size_t>
+    template<class Int, class = std::enable_if_t<std::numeric_limits<Int>::is_integer>>
+    inline auto convert_to(octet_string_view const & src) -> convert_result<Int>
     {
-        size_t dec = 0;
+        Int dec = 0;
         for (auto ch : src)
         {
             dec <<= 3;

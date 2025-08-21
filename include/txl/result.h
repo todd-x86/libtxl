@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <functional>
 #include <optional>
+#include <ostream>
 #include <stdexcept>
 #include <system_error>
 
@@ -272,4 +273,21 @@ namespace txl
             return *this;
         }
     };
+
+    template<class T, class E>
+    inline auto operator<<(std::ostream & os, result<T, E> const & res) -> std::ostream &
+    {
+        if (not res.is_assigned())
+        {
+            os << "{empty}";
+            return os;
+        }
+        if (res.is_error())
+        {
+            os << "{error=" << res.error() << "}";
+            return os;
+        }
+        os << "{result=" << res.value() << "}";
+        return os;
+    }
 }

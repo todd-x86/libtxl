@@ -6,6 +6,8 @@
 #include <txl/read_string.h>
 #include <txl/result.h>
 #include <txl/result_error.h>
+#include <txl/time.h>
+#include <txl/types.h>
 
 #include <string>
 #include <string_view>
@@ -102,6 +104,7 @@ namespace txl
         auto filename() const -> std::string_view { return name_; }
         auto size() const -> size_t { return size_; }
         auto type() const -> entry_type { return type_; }
+        auto modification_time() const -> std::chrono::system_clock::time_point const & { return mod_time_; } 
 
         auto offset() const -> off_t { return pos_; }
 
@@ -113,6 +116,7 @@ namespace txl
         std::string name_;
         size_t size_ = 0;
         entry_type type_ = unknown;
+        std::chrono::system_clock::time_point mod_time_;
 
         off_t pos_ = 0;
 
@@ -189,6 +193,9 @@ namespace txl
             e.name_ = std::move(name);
             e.size_ = hdr.size_;
             e.type_ = get_type(hdr.header_.typeflag);
+            // TODO: don't or_throw()
+            auto mod_time_secs = txl::convert_to<int64_t>(txl::octet_string_view{hdr.header_.mtime}).or_throw();
+            e.mod_time_ = txl::time::to_time_point<std::chrono::system_clock::time_point>(std::chrono::seconds{mod_time_secs});
             return e;
         }
     public:
@@ -219,7 +226,10 @@ namespace txl
             std::string name{};
             if (h->header_.typeflag == 'K' or h->header_.typeflag == 'L')
             {
-                // Follow link
+                // Block sequence: [*current, long filename, file info block]
+                // * = you are here
+                
+                // Follow link for long filename (stored in sequence)
                 tar_data_reader rdr{*reader_, h->pos_, h->pos_ + static_cast<off_t>(h->size_)};
                 auto long_name = read_string(rdr, h->size_);
                 if (long_name.is_error())
@@ -229,8 +239,16 @@ namespace txl
                 
                 name = std::move(*long_name);
 
-                // Skip block size of the filename
-                //next_pos_ += txl::align(h->size_, detail::BLOCK_SIZE);
+                // Get correct file info block
+                h = read_header();
+                if (not h.is_assigned())
+                {
+                    return {};
+                }
+                if (h.is_error())
+                {
+                    return h.error();
+                }
             }
             else
             {
