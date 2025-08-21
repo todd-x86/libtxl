@@ -63,6 +63,12 @@ namespace txl
     {
         return iterator_view<Iter>{begin, end};
     }
+    
+    template<class Iter>
+    inline auto make_reverse_iterator_view(Iter begin, Iter end) noexcept -> iterator_view<std::reverse_iterator<Iter>>
+    {
+        return iterator_view<std::reverse_iterator<Iter>>{end, begin};
+    }
 
     template<class Iter>
     inline auto make_empty_iterator_view(Iter end) noexcept -> iterator_view<Iter>

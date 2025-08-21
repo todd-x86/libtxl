@@ -10,7 +10,7 @@ namespace txl
     class expect final
     {
     private:
-        static std::function<void(expect const &, std::chrono::steady_clock::time_point const &)> on_at_most_;
+        static thread_local std::function<void(expect const &, std::chrono::steady_clock::time_point const &)> on_at_most_;
 
         std::chrono::steady_clock::time_point start_;
         std::chrono::steady_clock::time_point limit_;

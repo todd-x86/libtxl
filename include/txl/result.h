@@ -9,10 +9,18 @@
 
 namespace txl
 {
-    template<class Value>
+    struct system_error_context
+    {
+        using error_type = std::error_code;
+        using exception_type = std::system_error;
+    };
+
+    template<class Value, class ErrorContext = system_error_context>
     class result final
     {
     private:
+        using error_type = typename ErrorContext::error_type;
+
         struct is_value_t final
         {
         };
@@ -30,7 +38,7 @@ namespace txl
         union
         {
             Value value_;
-            std::error_code error_;
+            error_type error_;
         };
         uint8_t flags_ = 0;
 
@@ -61,7 +69,7 @@ namespace txl
         {
         }
 
-        result(std::error_code const & err)
+        result(error_type const & err)
             : error_(err)
             , flags_(ASSIGNED | IS_ERROR)
         {
@@ -98,7 +106,7 @@ namespace txl
 
             if (flags_ & IS_ERROR)
             {
-                error_.~error_code();
+                error_.~error_type();
             }
             else
             {
@@ -128,10 +136,16 @@ namespace txl
         auto is_error() const -> bool { return flags_ & IS_ERROR; }
         auto is_error(int err_code) const -> bool { return is_error() and error().value() == err_code; }
         auto value() const -> Value const & { return value_; }
-        auto error() const -> std::error_code const & { return error_; }
+        auto error() const -> error_type const & { return error_; }
+
+        auto assign_using() -> Value &
+        {
+            flags_ |= ASSIGNED;
+            return value_;
+        }
         
         template<class ValueOrFunc>
-        auto ignore(std::error_code err, ValueOrFunc && value_or_func) -> result
+        auto ignore(error_type const & err, ValueOrFunc && value_or_func) -> result
         {
             if (is_error() and error() == err)
             {
@@ -155,7 +169,7 @@ namespace txl
             {
                 return release();
             }
-            throw std::system_error{error()};
+            throw typename ErrorContext::exception_type{error()};
         }
 
         auto or_value(Value && v) -> Value &&
@@ -176,7 +190,11 @@ namespace txl
             return {std::nullopt};
         }
         
-        auto release() -> Value && { return std::move(value_); }
+        auto release() -> Value &&
+        {
+            flags_ &= ~ASSIGNED;
+            return std::move(value_);
+        }
 
         auto then(std::function<result<Value>()> cont) -> result<Value> &
         {
@@ -189,15 +207,17 @@ namespace txl
         }
     };
     
-    template<>
-    class result<void> final
+    template<class ErrorContext>
+    class result<void, ErrorContext> final
     {
     private:
-        std::error_code error_{};
+        using error_type = typename ErrorContext::error_type;
+
+        error_type error_{};
     public:
         result() = default;
 
-        result(std::error_code const & err)
+        result(error_type const & err)
             : error_(err)
         {
         }
@@ -223,9 +243,9 @@ namespace txl
         auto is_assigned() const -> bool { return static_cast<bool>(error_); }
         auto empty() const -> bool { return not is_assigned(); }
         auto is_error() const -> bool { return static_cast<bool>(error_); }
-        auto error() const -> std::error_code const & { return error_; }
+        auto error() const -> error_type const & { return error_; }
 
-        auto ignore(std::error_code err) -> result
+        auto ignore(error_type const & err) -> result
         {
             if (is_error() and error() == err)
             {
@@ -238,7 +258,7 @@ namespace txl
         {
             if (is_error())
             {
-                throw std::system_error{error()};
+                throw typename ErrorContext::exception_type{error()};
             }
         }
 

@@ -249,5 +249,7 @@ namespace txl
         auto end() -> std::byte * { return std::next(begin(), length_); }
         auto begin() const -> std::byte const * { return static_cast<std::byte const *>(buffer_); }
         auto end() const -> std::byte const * { return std::next(begin(), length_); }
+
+        auto is_zero() const -> bool { return std::find_if(begin(), end(), [](auto b) { return b != std::byte{'\0'}; }) == end(); }
     };
 }

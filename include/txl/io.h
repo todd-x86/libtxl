@@ -22,6 +22,23 @@ namespace txl
         }
     };
     
+    struct position_reader
+    {
+    protected:
+        // Returns buffer read
+        virtual auto read_impl(off_t offset, buffer_ref buf) -> result<size_t> = 0;
+    public:
+        auto read(off_t offset, buffer_ref buf) -> result<buffer_ref>
+        {
+            auto bytes_read = read_impl(offset, buf);
+            if (not bytes_read)
+            {
+                return bytes_read.error();
+            }
+            return buf.slice(0, *bytes_read);
+        }
+    };
+    
     struct writer
     {
     protected:

@@ -18,6 +18,7 @@ namespace txl
 {
     class file : public sendfile_file_base
                , public reader
+               , public position_reader
                , public writer
     {
     private:
@@ -54,6 +55,12 @@ namespace txl
         auto read_impl(buffer_ref buf) -> result<size_t> override
         {
             auto bytes_read = ::read(fd_, buf.data(), buf.size());
+            return handle_system_error(bytes_read, static_cast<size_t>(bytes_read));
+        }
+
+        auto read_impl(off_t offset, buffer_ref buf) -> result<size_t> override
+        {
+            auto bytes_read = ::pread(fd_, buf.data(), buf.size(), offset);
             return handle_system_error(bytes_read, static_cast<size_t>(bytes_read));
         }
 
@@ -101,17 +108,7 @@ namespace txl
         }
 
         using reader::read;
-
-        auto read(off_t offset, buffer_ref buf) -> result<buffer_ref>
-        {
-            auto bytes_read = ::pread(fd_, buf.data(), buf.size(), offset);
-            auto res = handle_system_error(bytes_read, static_cast<size_t>(bytes_read));
-            if (not res)
-            {
-                return res.error();
-            }
-            return buf.slice(0, *res);
-        }
+        using position_reader::read;
 
         using writer::write;
 
