@@ -16,6 +16,11 @@ namespace txl
         using exception_type = std::system_error;
     };
 
+    struct empty_result_error : std::runtime_error
+    {
+        using std::runtime_error::runtime_error;
+    };
+
     template<class Value, class ErrorContext = system_error_context>
     class result final
     {
@@ -45,6 +50,7 @@ namespace txl
 
         auto move_from(result && v) -> void
         {
+            auto has_previous_value = flags_ & ASSIGNED;
             std::swap(flags_, v.flags_);
 
             if (flags_ & ASSIGNED)
@@ -55,11 +61,18 @@ namespace txl
                 }
                 else
                 {
-                    value_ = std::move(v.value_);
+                    if (has_previous_value)
+                    {
+                        value_.~Value();
+                    }
+                    new(&value_) Value(std::move(v.value_));
                 }
             }
         }
     public:
+        using value_type = Value;
+        using error_context_type = ErrorContext;
+
         result()
         {
         }
@@ -166,6 +179,10 @@ namespace txl
 
         auto or_throw() -> Value &&
         {
+            if (not is_assigned())
+            {
+                throw empty_result_error{"result is empty"};
+            }
             if (not is_error())
             {
                 return release();
@@ -175,7 +192,7 @@ namespace txl
 
         auto or_value(Value && v) -> Value &&
         {
-            if (not is_error())
+            if (is_assigned() and not is_error())
             {
                 return release();
             }
@@ -184,7 +201,7 @@ namespace txl
 
         auto as_optional() -> std::optional<Value>
         {
-            if (not is_error())
+            if (is_assigned() and not is_error())
             {
                 return {release()};
             }
@@ -200,7 +217,7 @@ namespace txl
         auto then(std::function<result<Value>()> cont) -> result<Value> &
         {
             // Only runs if result is NOT an error
-            if (not is_error())
+            if (is_assigned() and not is_error())
             {
                 *this = std::move(cont());
             }

@@ -184,6 +184,9 @@ namespace txl
 
         auto empty() const -> bool { return not emplaced_; }
 
+        using storage<Value, MovePolicy>::operator*;
+        using storage<Value, MovePolicy>::operator->;
+
         auto operator=(safe_storage const & s) -> safe_storage &
         {
             if (&s != this)
@@ -202,4 +205,18 @@ namespace txl
             return *this;
         }
     };
+
+    template<class V, class M>
+    inline auto operator==(safe_storage<V, M> const & x, safe_storage<V, M> const & y) -> bool
+    {
+        if (x.empty() != y.empty())
+        {
+            return false;
+        }
+        if (x.empty())
+        {
+            return true;
+        }
+        return *x == *y;
+    }
 }
