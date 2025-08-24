@@ -5,7 +5,7 @@
 
 TXL_UNIT_TEST(simple_tar)
 {
-    txl::file inp_file{"./test1.tar", "r"};
+    txl::file inp_file{"tar_data/test1.tar", "r"};
     txl::tar_reader rd{inp_file};
     FOREACH_RESULT(rd.read_entry(), e)
     {
