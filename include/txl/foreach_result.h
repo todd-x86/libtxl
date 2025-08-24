@@ -60,7 +60,7 @@ namespace txl
                     return *this;
                 }
 
-                auto res = std::move((*iter_)());
+                auto res = (*iter_)();
                 if (not res.is_assigned())
                 {
                     // Empty
