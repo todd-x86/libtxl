@@ -5,6 +5,8 @@
 
 #include <functional>
 
+#define FOREACH_RESULT(expr, res) for (auto const & res : ::txl::foreach_result([&]() { return expr; }))
+
 namespace txl
 {
     template<class T, class E>

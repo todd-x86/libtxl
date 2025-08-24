@@ -7,15 +7,8 @@ TXL_UNIT_TEST(simple_tar)
 {
     txl::file inp_file{"./test1.tar", "r"};
     txl::tar_reader rd{inp_file};
-    for (auto const & e : txl::foreach_result([&rd]() { return rd.read_entry(); }))
-    //while (true)
+    FOREACH_RESULT(rd.read_entry(), e)
     {
-        //auto pending = rd.read_entry();
-        //if (pending.empty())
-        //{
-        //    break;
-        //}
-        //auto e = pending.or_throw();
         std::cout << txl::time::format_time_point(e.modification_time()) << '"' << e.filename() << '"' << " -- > " << e.size() << " [" << (e.type() == txl::tar_entry::directory ? "dir" : "file") << "] " << std::endl;
         if (e.type() == txl::tar_entry::file)
         {

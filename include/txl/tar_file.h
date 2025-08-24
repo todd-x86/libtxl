@@ -9,6 +9,7 @@
 #include <txl/time.h>
 #include <txl/types.h>
 
+#include <chrono>
 #include <string>
 #include <string_view>
 
@@ -187,15 +188,18 @@ namespace txl
             }
         }
 
-        static auto convert_to_entry(tar_header const & hdr, std::string && name) -> tar_entry
+        static auto convert_to_entry(tar_header const & hdr, std::string && name) -> tar_result<tar_entry>
         {
             tar_entry e{hdr.pos_};
             e.name_ = std::move(name);
             e.size_ = hdr.size_;
             e.type_ = get_type(hdr.header_.typeflag);
-            // TODO: don't or_throw()
-            auto mod_time_secs = txl::convert_to<int64_t>(txl::octet_string_view{hdr.header_.mtime}).or_throw();
-            e.mod_time_ = txl::time::to_time_point<std::chrono::system_clock::time_point>(std::chrono::seconds{mod_time_secs});
+            auto mod_time_secs = txl::convert_to<int64_t>(txl::octet_string_view{hdr.header_.mtime});
+            if (mod_time_secs.is_error())
+            {
+                return tar_error_code::octal_decode_error; //mod_time_secs.error();
+            }
+            e.mod_time_ = txl::time::to_time_point<std::chrono::system_clock::time_point>(std::chrono::seconds{*mod_time_secs});
             return e;
         }
     public:

@@ -1,6 +1,9 @@
 add_custom_target(test_io_reactor_data
     COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_CURRENT_LIST_DIR}/io_reactor_data ${CMAKE_CURRENT_BINARY_DIR}/io_reactor_data
 )
+add_custom_target(test_tar_data
+    COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_CURRENT_LIST_DIR}/tar_data ${CMAKE_CURRENT_BINARY_DIR}/tar_data
+)
 
 add_executable(test_rb_reader test_rb_reader.cpp)
 add_executable(test_rb_writer test_rb_writer.cpp)
@@ -83,6 +86,7 @@ add_executable(test_storage_union test_storage_union.cpp)
 add_test(NAME test_storage_union COMMAND test_storage_union)
 add_executable(test_tar_file test_tar_file.cpp)
 add_test(NAME test_tar_file COMMAND test_tar_file)
+add_dependencies(test_tar_file test_tar_data)
 add_executable(test_tasks test_tasks.cpp)
 add_test(NAME test_tasks COMMAND test_tasks)
 add_executable(test_threading test_threading.cpp)
