@@ -234,7 +234,7 @@ namespace txl
                 // * = you are here
                 
                 // Follow link for long filename (stored in sequence)
-                tar_data_reader rdr{*reader_, h->pos_, h->pos_ + static_cast<off_t>(h->size_)};
+                tar_data_reader rdr{*reader_, h->pos_, h->pos_ + static_cast<off_t>(h->size_) - 1 /* -1 comes from a null-term at the end */};
                 auto long_name = read_string(rdr, h->size_);
                 if (long_name.is_error())
                 {

@@ -6,7 +6,9 @@
 
 #include <chrono>
 #include <iomanip>
+#include <istream>
 #include <ostream>
+#include <string>
 
 namespace txl::time
 {
@@ -37,6 +39,11 @@ namespace txl::time
         // TODO: Check for null
         ::localtime_r(&timer, &res);
         return res;
+    }
+    
+    inline auto from_tm(std::tm tp) -> std::chrono::system_clock::time_point
+    {
+        return std::chrono::system_clock::from_time_t(std::mktime(&tp));
     }
 
     template<class Rep, class Period>
@@ -94,7 +101,15 @@ namespace txl::time
         // TODO: too redundant?
         return to_time_point<typename TimePoint::clock, typename TimePoint::duration>(sec);
     }
-
+    
+    inline auto to_time_point(std::string const & time, std::string const & format) -> std::chrono::system_clock::time_point
+    {
+        std::tm time_tm;
+        std::istringstream ss{time};
+        ss >> std::get_time(&time_tm, format.c_str());
+        // TODO: check fail bit on ss
+        return from_tm(time_tm);
+    }
 
     template<class Rep, class Period>
     inline auto to_timeval(std::chrono::duration<Rep, Period> d) -> ::timeval
