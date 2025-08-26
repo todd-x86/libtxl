@@ -43,9 +43,9 @@ namespace txl::time
     
     inline auto from_tm(std::tm tp) -> std::chrono::system_clock::time_point
     {
-        return std::chrono::system_clock::from_time_t(std::mktime(&tp));
+        return std::chrono::system_clock::from_time_t(::mktime(&tp));
     }
-
+    
     template<class Rep, class Period>
     inline auto to_timespec(std::chrono::duration<Rep, Period> d) -> ::timespec
     {
@@ -109,6 +109,15 @@ namespace txl::time
         ss >> std::get_time(&time_tm, format.c_str());
         // TODO: check fail bit on ss
         return from_tm(time_tm);
+    }
+    
+    inline auto to_time_point_utc(std::string const & time, std::string const & format) -> std::chrono::system_clock::time_point
+    {
+        std::tm time_tm;
+        std::istringstream ss{time};
+        ss >> std::get_time(&time_tm, format.c_str());
+        // TODO: check fail bit on ss
+        return std::chrono::system_clock::from_time_t(::timegm(&time_tm));
     }
 
     template<class Rep, class Period>

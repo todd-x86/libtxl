@@ -41,7 +41,7 @@ inline auto operator<<(std::ostream & os, test_tar_data const & d) -> std::ostre
 
 inline auto get_time_point(std::string const & s) -> std::chrono::system_clock::time_point
 {
-    return txl::time::to_time_point(s, "%Y%m%d-%H:%M:%S");
+    return txl::time::to_time_point_utc(s, "%Y%m%d-%H:%M:%S");
 }
 
 TXL_UNIT_TEST(simple_tar)
@@ -50,57 +50,57 @@ TXL_UNIT_TEST(simple_tar)
 
     expected.emplace_back(
         "tar_example/",
-        get_time_point("20250815-22:26:52"),
+        get_time_point("20250816-02:26:52"),
         txl::tar_entry::directory
     );
     expected.emplace_back(
         "tar_example/toolongfortar/",
-        get_time_point("20250815-22:27:01"),
+        get_time_point("20250816-02:27:01"),
         txl::tar_entry::directory
     );
     expected.emplace_back(
         "tar_example/toolongfortar/this_is_too_long/",
-        get_time_point("20250815-22:27:06"),
+        get_time_point("20250816-02:27:06"),
         txl::tar_entry::directory
     );
     expected.emplace_back(
         "tar_example/toolongfortar/this_is_too_long/is_this_too_long/",
-        get_time_point("20250815-22:27:12"),
+        get_time_point("20250816-02:27:12"),
         txl::tar_entry::directory
     );
     expected.emplace_back(
         "tar_example/toolongfortar/this_is_too_long/is_this_too_long/maybe/",
-        get_time_point("20250815-22:27:11"),
+        get_time_point("20250816-02:27:11"),
         txl::tar_entry::directory
     );
     expected.emplace_back(
         "tar_example/toolongfortar/this_is_too_long/is_this_too_long/not_sure/",
-        get_time_point("20250815-22:27:18"),
+        get_time_point("20250816-02:27:18"),
         txl::tar_entry::directory
     );
     expected.emplace_back(
         "tar_example/toolongfortar/this_is_too_long/is_this_too_long/not_sure/if_not_why_not/",
-        get_time_point("20250815-22:27:42"),
+        get_time_point("20250816-02:27:42"),
         txl::tar_entry::directory
     );
     expected.emplace_back(
         "tar_example/toolongfortar/this_is_too_long/is_this_too_long/not_sure/if_not_why_not/is_it_long_enough_now/",
-        get_time_point("20250815-22:27:47"),
+        get_time_point("20250816-02:27:47"),
         txl::tar_entry::directory
     );
     expected.emplace_back(
         "tar_example/toolongfortar/this_is_too_long/is_this_too_long/not_sure/if_not_why_not/is_it_long_enough_now/how_about_now/",
-        get_time_point("20250815-22:27:51"),
+        get_time_point("20250816-02:27:51"),
         txl::tar_entry::directory
     );
     expected.emplace_back(
         "tar_example/toolongfortar/this_is_too_long/is_this_too_long/not_sure/if_not_why_not/is_it_long_enough_now/how_about_now/okay_maybe/",
-        get_time_point("20250815-22:28:18"),
+        get_time_point("20250816-02:28:18"),
         txl::tar_entry::directory
     );
     expected.emplace_back(
         "tar_example/toolongfortar/this_is_too_long/is_this_too_long/not_sure/if_not_why_not/is_it_long_enough_now/how_about_now/okay_maybe/README.md",
-        get_time_point("20250815-22:28:17"),
+        get_time_point("20250816-02:28:17"),
         txl::tar_entry::file,
         17,
         std::optional<std::string>{"can you read me?\n"}
