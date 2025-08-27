@@ -6,8 +6,8 @@
 
 #include <chrono>
 #include <iomanip>
-#include <istream>
 #include <ostream>
+#include <sstream>
 #include <string>
 
 namespace txl::time
