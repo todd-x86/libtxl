@@ -1,5 +1,7 @@
 #pragma once
 
+// storage is essentially a std::optional-like replacement that shaves off the extra bytes incurred from storing a flag to represent whether a value is contained within it
+
 #include <algorithm>
 
 namespace txl
@@ -57,7 +59,7 @@ namespace txl
 
         storage(storage const & s)
         {
-            this->val() = s.val();
+            new (this->ptr()) Value( s.val() );
         }
 
         storage(storage && s)
@@ -103,7 +105,7 @@ namespace txl
     template<class Value>
     auto storage_value_move<Value>::move(storage_base<Value> & src, storage_base<Value> & dst) -> void
     {
-        new (dst.ptr()) Value{std::move(src.val())};
+        new (dst.ptr()) Value( std::move(src.val()) );
     }
 
     template<class Value>
@@ -112,6 +114,7 @@ namespace txl
         dst.raw_swap(src);
     }
 
+    // this is basically std::optional again
     template<class Value, class MovePolicy = storage_value_move<Value>>
     class safe_storage : protected storage<Value, MovePolicy>
     {
