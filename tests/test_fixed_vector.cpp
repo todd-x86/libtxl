@@ -4,10 +4,57 @@
 #include <string>
 #include <vector>
 
+struct safety_string final
+{
+    static size_t num_created_;
+    static size_t num_destroyed_;
+    static size_t num_copied_;
+    static size_t num_moved_;
+
+    std::string data_;
+
+    safety_string(std::string && s)
+        : data_{std::move(s)}
+    {
+        ++num_created_;
+    }
+
+    safety_string(safety_string const & s)
+        : data_{s.data_}
+    {
+        ++num_copied_;
+    }
+
+    safety_string(safety_string && s)
+        : data_{std::move(s.data_)}
+    {
+        ++num_moved_;
+    }
+
+    ~safety_string()
+    {
+        ++num_destroyed_;
+    }
+
+    static auto reset_counters() -> void
+    {
+        num_created_ = 0;
+        num_destroyed_ = 0;
+        num_copied_ = 0;
+        num_moved_ = 0;
+    }
+};
+size_t safety_string::num_created_ = 0;
+size_t safety_string::num_destroyed_ = 0;
+size_t safety_string::num_copied_ = 0;
+size_t safety_string::num_moved_ = 0;
+
 TXL_UNIT_TEST(fixed_vector)
 {
-    txl::fixed_vector<std::string, 3> names{};
-    std::vector<std::string> out{};
+    safety_string::reset_counters();
+
+    txl::fixed_vector<safety_string, 3> names{};
+    std::vector<safety_string> out{};
 
     assert_equal(names.max_size(), 3);
     assert_equal(names.capacity(), 3);
@@ -17,6 +64,11 @@ TXL_UNIT_TEST(fixed_vector)
     {
         out.emplace_back(name);
     }
+
+    assert_equal(safety_string::num_created_, 0);
+    assert_equal(safety_string::num_destroyed_, 0);
+    assert_equal(safety_string::num_copied_, 0);
+    assert_equal(safety_string::num_moved_, 0);
 }
 
 TXL_UNIT_TEST(repeat_construct)
@@ -94,7 +146,7 @@ TXL_UNIT_TEST(push_back)
 
 struct grocery final
 {
-    std::string name;
+    safety_string name;
     int quantity;
     double price;
 
@@ -108,12 +160,19 @@ struct grocery final
 
 TXL_UNIT_TEST(emplace_back)
 {
+    safety_string::reset_counters();
+
     txl::fixed_vector<grocery, 8> groceries{};
     groceries.emplace_back("Bread", 1, 2.99);
     groceries.emplace_back("Milk", 2, 1.99);
     groceries.emplace_back("Tomatoes", 8, 1.99);
 
     assert_equal(groceries.size(), 3);
+    
+    assert_equal(safety_string::num_created_, 3);
+    assert_equal(safety_string::num_destroyed_, 0);
+    assert_equal(safety_string::num_copied_, 0);
+    assert_equal(safety_string::num_moved_, 0);
 }
 
 TXL_UNIT_TEST(insert_middle)
@@ -124,9 +183,9 @@ TXL_UNIT_TEST(insert_middle)
     groceries.insert(groceries.begin() + 1, grocery{"Milk", 2, 1.99});
 
     assert_equal(groceries.size(), 3);
-    assert_equal(groceries[0].name, "Bread");
-    assert_equal(groceries[1].name, "Milk");
-    assert_equal(groceries[2].name, "Tomatoes");
+    assert_equal(groceries[0].name.data_, "Bread");
+    assert_equal(groceries[1].name.data_, "Milk");
+    assert_equal(groceries[2].name.data_, "Tomatoes");
 }
 
 TXL_UNIT_TEST(copy_assign)

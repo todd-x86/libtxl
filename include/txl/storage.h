@@ -1,36 +1,25 @@
 #pragma once
 
-// storage is essentially a std::optional-like replacement that shaves off the extra bytes incurred from storing a flag to represent whether a value is contained within it
+// `unsafe_storage` is essentially a `std::optional`-like replacement that shaves off the extra bytes incurred from storing a flag to represent whether a value is contained within it
 
+#include <txl/buffer_ref.h>
+
+#include <array>
 #include <algorithm>
 
 namespace txl
 {
-    template<class>
-    class storage_base;
-
-    template<class Value>
-    struct storage_value_move final
-    {
-        static auto move(storage_base<Value> & src, storage_base<Value> & dst) -> void;
-    };
-
-    template<class Value>
-    struct storage_raw_move final
-    {
-        static auto move(storage_base<Value> & src, storage_base<Value> & dst) -> void;
-    };
-
     template<class Value>
     class storage_base
     {
-        template<class>
-        friend struct storage_raw_move;
-        template<class>
-        friend struct storage_value_move;
     private:
-        alignas(Value) std::byte val_[sizeof(Value)];
+        alignas(Value) std::array<std::byte, sizeof(Value)> val_;
     protected:
+        auto to_buffer_ref() -> buffer_ref { return {val_}; }
+        auto to_buffer_ref() const -> buffer_ref { return {val_}; }
+        auto is_zero() const -> bool { return to_buffer_ref().is_zero(); }
+        auto fill_zero() -> void { to_buffer_ref().fill(std::byte{0}); }
+
         auto ptr() -> Value * { return reinterpret_cast<Value *>(&val_[0]); }
         auto val() -> Value & { return *ptr(); }
         auto ptr() const -> Value const * { return reinterpret_cast<Value const *>(&val_[0]); }
@@ -52,19 +41,19 @@ namespace txl
         auto operator->() const -> Value const * { return ptr(); }
     };
 
-    template<class Value, class MovePolicy = storage_value_move<Value>>
-    struct storage : storage_base<Value>
+    template<class Value>
+    struct unsafe_storage : storage_base<Value>
     {
-        storage() = default;
+        unsafe_storage() = default;
 
-        storage(storage const & s)
+        unsafe_storage(unsafe_storage const & s)
         {
             new (this->ptr()) Value( s.val() );
         }
 
-        storage(storage && s)
+        unsafe_storage(unsafe_storage && s)
         {
-            MovePolicy::move(s, *this);
+            new (this->ptr()) Value(std::move(s.val()));
         }
         
         template<class... Args>
@@ -78,45 +67,29 @@ namespace txl
             this->val().~Value();
         }
 
-        auto operator=(storage const & s) -> storage &
+        auto operator=(unsafe_storage const & s) -> unsafe_storage &
         {
             if (&s != this)
             {
-                this->val() = s.val();
+                new (this->ptr()) Value(s.val());
             }
             return *this;
         }
 
-        auto operator=(storage && s) -> storage &
+        auto operator=(unsafe_storage && s) -> unsafe_storage &
         {
             if (&s != this)
             {
-                MovePolicy::move(s, *this);
+                new (this->ptr()) Value(std::move(s.val()));
             }
             return *this;
-        }
-
-        auto swap(storage & s) -> void
-        {
-            std::swap(s.val(), this->val());
         }
     };
     
-    template<class Value>
-    auto storage_value_move<Value>::move(storage_base<Value> & src, storage_base<Value> & dst) -> void
-    {
-        new (dst.ptr()) Value( std::move(src.val()) );
-    }
-
-    template<class Value>
-    auto storage_raw_move<Value>::move(storage_base<Value> & src, storage_base<Value> & dst) -> void
-    {
-        dst.raw_swap(src);
-    }
 
     // this is basically std::optional again
-    template<class Value, class MovePolicy = storage_value_move<Value>>
-    class safe_storage : protected storage<Value, MovePolicy>
+    template<class Value>
+    class safe_storage : protected unsafe_storage<Value>
     {
     private:
         bool emplaced_ = false;
@@ -126,12 +99,8 @@ namespace txl
             erase();
             if (s.emplaced_)
             {
-                this->val() = s.val();
+                new (this->ptr()) Value(s.val());
                 emplaced_ = true;
-            }
-            else
-            {
-                this->raw_copy(s);
             }
         }
 
@@ -140,7 +109,7 @@ namespace txl
             erase();
             if (s.emplaced_)
             {
-                MovePolicy::move(s, *this);
+                new (this->ptr()) Value(std::move(s.val()));
                 std::swap(emplaced_, s.emplaced_);
             }
             else
@@ -161,7 +130,7 @@ namespace txl
             move(std::move(s));
         }
         
-        virtual ~safe_storage()
+        ~safe_storage()
         {
             erase();
         }
@@ -170,7 +139,7 @@ namespace txl
         auto emplace(Args && ... args) -> void
         {
             erase();
-            new (this->ptr()) Value{std::forward<Args>(args)...};
+            new (this->ptr()) Value(std::forward<Args>(args)...);
             emplaced_ = true;
         }
 
@@ -187,8 +156,8 @@ namespace txl
 
         auto empty() const -> bool { return not emplaced_; }
 
-        using storage<Value, MovePolicy>::operator*;
-        using storage<Value, MovePolicy>::operator->;
+        using unsafe_storage<Value>::operator*;
+        using unsafe_storage<Value>::operator->;
 
         auto operator=(safe_storage const & s) -> safe_storage &
         {
@@ -209,8 +178,8 @@ namespace txl
         }
     };
 
-    template<class V, class M>
-    inline auto operator==(safe_storage<V, M> const & x, safe_storage<V, M> const & y) -> bool
+    template<class V>
+    inline auto operator==(safe_storage<V> const & x, safe_storage<V> const & y) -> bool
     {
         if (x.empty() != y.empty())
         {

@@ -28,7 +28,7 @@ namespace txl
         using const_reverse_iterator = std::reverse_iterator<const_iterator>;
 
     private:
-        storage<Value, storage_value_move<Value>> data_[Count];
+        std::array<unsafe_storage<Value>, Count> data_;
         size_type count_ = 0;
 
         template<size_t S>

@@ -57,13 +57,13 @@ TXL_UNIT_TEST(safe_storage)
     assert_equal(sentinel::num_deletes_, 2);
 }
 
-TXL_UNIT_TEST(storage)
+TXL_UNIT_TEST(unsafe_storage)
 {
     sentinel::reset();
     assert_equal(sentinel::num_creates_, 0);
     assert_equal(sentinel::num_deletes_, 0);
 
-    txl::storage<sentinel> empty{};
+    txl::unsafe_storage<sentinel> empty{};
     assert_equal(sentinel::num_creates_, 0);
     assert_equal(sentinel::num_deletes_, 0);
 
@@ -93,7 +93,7 @@ struct thingy
 
 TXL_UNIT_TEST(size)
 {
-    assert_equal(sizeof(txl::storage<thingy>), sizeof(thingy));
+    assert_equal(sizeof(txl::unsafe_storage<thingy>), sizeof(thingy));
 }
 
 TXL_RUN_TESTS()

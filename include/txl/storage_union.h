@@ -2,6 +2,8 @@
 
 // Alternative for std::variant with a more union-like interface (no safeties)
 
+#include <txl/storage.h>
+
 #include <limits>
 #include <cstdint>
 
@@ -14,8 +16,19 @@ namespace txl
     class storage_union_base<S, T>
     {
     private:
-        uint8_t value_[sizeof(T)];
+        unsafe_storage<T> value_;
     public:
+        template<class Visitor>
+        auto visit(Visitor visitor, uint8_t occupied) -> bool
+        {
+            if (S == occupied)
+            {
+                visitor(*value_);
+                return true;
+            }
+            return false;
+        }
+
         template<class C>
         auto contains(uint8_t occupied) const -> bool
         {
@@ -30,7 +43,7 @@ namespace txl
         {
             if (occupied == S)
             {
-                reinterpret_cast<T *>(&value_[0])->~T();
+                value_.erase();
             }
         }
 
@@ -39,16 +52,16 @@ namespace txl
         {
             if constexpr (std::is_same_v<R, T>)
             {
-                return std::move(*reinterpret_cast<R *>(&value_[0]));
+                return std::move(*reinterpret_cast<R *>(&(*value_)));
             }
         }
 
-        operator T() const { return *reinterpret_cast<T const *>(&value_[0]); }
+        operator T() const { return *value_; }
 
         auto assign(uint8_t & occupied, T && value) -> void
         {
             occupied = S;
-            new(&value_[0]) T{std::move(value)};
+            value_.emplace(std::move(value));
         }
     };
 
@@ -58,12 +71,23 @@ namespace txl
     private:
         union
         {
-            uint8_t value_[sizeof(T)];
+            unsafe_storage<T> value_;
             storage_union_base<S+1, Args...> args_;
         };
     public:
-        auto data() const -> void const * { return reinterpret_cast<void const *>(&value_[0]); }
-        auto data() -> void * { return reinterpret_cast<void *>(&value_[0]); }
+        template<class Visitor>
+        auto visit(Visitor visitor, uint8_t occupied) -> bool
+        {
+            if (S == occupied)
+            {
+                visitor(*value_);
+                return true;
+            }
+            return args_.visit(visitor, occupied);
+        }
+
+        auto data() const -> void const * { return reinterpret_cast<void const *>(&(*value_)); }
+        auto data() -> void * { return reinterpret_cast<void *>(&(*value_)); }
 
         template<class C>
         auto contains(uint8_t occupied) const -> bool
@@ -79,7 +103,7 @@ namespace txl
         {
             if (occupied == S)
             {
-                reinterpret_cast<T *>(&value_[0])->~T();
+                value_.erase();
             }
             else
             {
@@ -92,17 +116,17 @@ namespace txl
         {
             if constexpr (std::is_same_v<R, T>)
             {
-                return std::move(*reinterpret_cast<R *>(&value_[0]));
+                return std::move(*reinterpret_cast<R *>(&(*value_)));
             }
             return std::move(args_.template release<R>());
         }
 
-        operator T() const { return *reinterpret_cast<T const *>(&value_[0]); }
+        operator T() const { return *value_; }
 
         auto assign(uint8_t & occupied, T && value) -> void
         {
             occupied = S;
-            new(&value_[0]) T{std::move(value)};
+            value_.emplace(std::move(value));
         }
         
         template<class Value>
@@ -134,6 +158,12 @@ namespace txl
         ~storage_union()
         {
             invoke_deleter();
+        }
+
+        template<class Visitor>
+        auto visit(Visitor visitor) -> bool
+        {
+            return base_.visit(visitor, occupied_);
         }
 
         template<class T>
@@ -177,4 +207,20 @@ namespace txl
             return *this;
         }
     };
+}
+
+namespace std
+{
+    // This is necessary for `txl::task`.
+    template<class... Args>
+    inline auto swap(::txl::storage_union<Args...> & x, ::txl::storage_union<Args...> & y)
+    {
+        ::txl::storage_union<Args...> swappable{};
+        // Hold X in swappable
+        x.visit([&swappable](auto & value) { swappable.set(std::move(value)); });
+        // Move Y to X
+        y.visit([&x](auto & value) { x.set(std::move(value)); });
+        // Move swappable to Y
+        swappable.visit([&y](auto & value) { y.set(std::move(value)); });
+    }
 }
