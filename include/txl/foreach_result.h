@@ -1,9 +1,9 @@
 #pragma once
 
 #include <txl/result.h>
-#include <txl/storage.h>
 
 #include <functional>
+#include <optional>
 
 #define FOREACH_RESULT(expr, res) for (auto const & res : ::txl::foreach_result([&]() { return expr; }))
 
@@ -19,7 +19,7 @@ namespace txl
         {
         private:
             std::function<result<T, E>()> * iter_ = nullptr;
-            safe_storage<T> current_{};
+            std::optional<T> current_{};
         public:
             const_iterator() = default;
             const_iterator(std::function<result<T, E>()> & iter)
@@ -41,7 +41,7 @@ namespace txl
 
             auto operator==(const_iterator const & it) const -> bool
             {
-                return current_.empty() and it.current_.empty();
+                return not current_.has_value() and not it.current_.has_value();
             }
 
             auto operator!=(const_iterator const & it) const -> bool
@@ -52,7 +52,7 @@ namespace txl
             auto operator++() -> const_iterator &
             {
                 // Erase existing value
-                current_.erase();
+                current_.reset();
                 
                 if (iter_ == nullptr)
                 {

@@ -96,6 +96,10 @@ namespace txl
         }
     };
 
+    /**
+     * Fixed string data structure which encapsulates a series of characters plus a null-terminator in the same memory allocation as the container.
+     * The main purpose of a `fixed_string` is to prevent heap allocations of strings that are subject to change frequently but obey a specific length boundary.
+     */
     template<size_t Size, class Char = char>
     class fixed_string : public fixed_string_base<Size + 1, Char>
     {
@@ -168,6 +172,9 @@ namespace txl
     };
 
 
+    /**
+     * Fixed length string data structure that does not include a null terminator. The key difference between `string_block` and `fixed_string` is a `fixed_string` supports a null-terminator which permits it to be used in C-string ABIs, whereas a `string_block` may not always guarantee that your string includes a null terminator.
+     */
     template<size_t Size, class Char = char>
     class string_block : public fixed_string_base<Size, Char>
     {

@@ -148,6 +148,9 @@ namespace txl
         return os;
     }
 
+    /**
+     * Associated file descriptor or pointer that lives with an event inside of an event_poller. 
+     */
     class event_tag final
     {
         friend struct event_poller;
@@ -194,13 +197,19 @@ namespace txl
         auto u64() const -> uint64_t { return data_.u64; }
         auto u64(uint64_t v) -> void { data_.u64 = v; }
     };
-    
+   
+    /**
+     * Pure virtual interface for receiving events from an event_poller.
+     */
     struct event_buffer
     {
         virtual auto epoll_buffer() -> ::epoll_event * = 0;
         virtual auto size() const -> size_t = 0;
     };
 
+    /**
+     * Rapper around an E poll event . 
+     */
     struct event_data : private ::epoll_event
     {
         auto events() const -> event_type { return static_cast<event_type>(::epoll_event::events); }
@@ -209,6 +218,9 @@ namespace txl
         auto fd() const -> int { return data.fd; }
     };
 
+    /**
+     * Array backed event buffer that stores event data up to a fixed length .
+     */
     template<size_t S>
     class event_array final : public event_buffer
     {
@@ -242,6 +254,9 @@ namespace txl
         }
     };
 
+    /**
+     * Stood vector backed event buffer that stores event data but may be resized to accommodate more events . The event polar does not resize the event vector ; this is the responsibility of whatever passes the event vector to the event polar 
+     */
     class event_vector final : public event_buffer
     {
     private:
@@ -285,6 +300,9 @@ namespace txl
         }
     };
 
+    /**
+     * E Paul backed event polar which supports adding modifying and removing events and pulling the kernel for event updates .
+     */
     struct event_poller final : file_base
     {
         event_poller() = default;

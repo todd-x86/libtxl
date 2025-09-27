@@ -4,6 +4,9 @@
 
 namespace txl
 {
+    /**
+     * Stores a series of values by Encoding each value as a delta parentheses difference parentheses from a base value . The purpose of a delta vector is to save memory when the delta of each value is not far from its previous value and can fit in less memory than the base value. 
+     */
     template<class Base, class Delta, class Value = decltype(std::declval<Base>() + std::declval<Delta>())>
     class delta_vector
     {

@@ -12,6 +12,9 @@
 
 namespace txl
 {
+    /**
+     * Copies a series of bytes from a reader into a writer using a buffer ref as the temporary copy buffer and a size policy for determining how many bytes will be read. The size policy dictates that the number of bytes does not always need to be a fixed number but may conform to a more sophisticated approach when copying.
+     */
     template<class SizePolicy, class = std::enable_if_t<std::is_base_of_v<size_policy, SizePolicy>>>
     auto copy(reader & src, writer & dst, buffer_ref copy_buf, SizePolicy bytes_to_read) -> result<size_t>
     {
@@ -40,7 +43,10 @@ namespace txl
 
         return total_read;
     }
-    
+   
+    /**
+     * Copy is a series of bytes from a reader into a writer with a temporary buffer of four kilobytes and a size policy directing how many bytes to copy.
+     */
     template<class SizePolicy, class = std::enable_if_t<std::is_base_of_v<size_policy, SizePolicy>>>
     inline auto copy(reader & src, writer & dst, SizePolicy bytes_to_read) -> result<size_t>
     {
@@ -49,7 +55,10 @@ namespace txl
         
         return copy(src, dst, buffer_ref{buf}, bytes_to_read);
     }
-    
+   
+    /**
+     * Copies a series of bytes from a reader into a writer with a temporary buffer ref for storing the copied information during transport . The size policy conforms to the size of the copy buffer . 
+     */
     inline auto copy(reader & src, writer & dst, buffer_ref copy_buf) -> result<size_t>
     {
         return copy(src, dst, copy_buf, exactly{copy_buf.size()});
