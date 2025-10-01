@@ -15,92 +15,16 @@ namespace txl
 
         struct node;
 
-        struct node_data final
-        {
-            kv_pair data;
-            std::unique_ptr<node> right = nullptr;
+        using node_ptr = std::unique_ptr<node>;
 
-            node_data(kv_pair && p)
-                : data{std::move(p)}
-            {
-            }
-        };
-        
         struct node final
         {
-            std::unique_ptr<node> left = nullptr;
-            std::vector<node_data> values;
+            std::vector<node_ptr> children;
+            std::vector<kv_pair> values;
 
-            auto left_child(size_t index) -> std::unique_ptr<node> &
+            node()
             {
-                if (index > 0)
-                {
-                    return values[index-1].right;
-                }
-                return left;
-            }
-            
-            auto right_child(size_t index) -> std::unique_ptr<node> &
-            {
-                return values[index].right;
-            }
-
-            auto split() -> std::unique_ptr<node>
-            {
-                /**
-                 *  [1, 2, 3]
-                 *  / |  |  \
-                 * a  b  c   d
-                 *
-                 *    [2]
-                 *   /   \
-                 * [1]   [3]
-                 * / \   / \
-                 *a   b c   d
-                 */
-
-                // Take middle and make it its own node
-                // Put left and right sides of node as children
-
-
-                auto middle_it = values.begin() + (values.size() / 2);
-
-                std::unique_ptr<node> new_owner;
-                auto & n = new_owner->insert_into(std::move(middle_it->data));
-                
-                n.right_child(0, 
-                
-                return new_owner;
-            }
-
-            auto find_child(Key const & key) -> node *
-            {
-                auto it = std::lower_bound(values.begin(), values.end(), key, [](auto const & node, auto const & key) {
-                    return node.data.first < key;
-                });
-                if (it == values.end())
-                {
-                    // last?
-                    return values.back().right.get();
-                }
-                if (it->data.first < key)
-                {
-                    return it->right.get();
-                }
-
-                // Can't go left any further
-                if (it == values.begin())
-                {
-                    return left.get();
-                }
-
-                // Go left by one
-                return (it - 1)->right.get();
-            }
-
-            auto is_leaf() const -> bool
-            {
-                return left == nullptr and std::find_if(values.begin(), values.end(), [](auto const & node) { return node.right != nullptr; }) == values.end();
+                //values.reserve(10);
             }
 
             auto num_values() const -> size_t
@@ -108,16 +32,92 @@ namespace txl
                 return values.size();
             }
 
-            auto insert_into(kv_pair && data) -> node_data &
+            auto set_child(size_t index, node_ptr & child) -> void
+            {
+                if (index == children.size())
+                {
+                    children.emplace_back(std::move(child));
+                    return;
+                }
+                children.at(index) = std::move(child);
+            }
+
+            auto split_into(node & parent) -> void
+            {
+                auto mid = values.size() / 2;
+
+                auto left = std::make_unique<node>();
+                std::move(values.begin(), std::next(values.begin(), mid), std::back_inserter(left->values));
+                std::move(children.begin(), std::next(children.begin(), mid+1), std::back_inserter(left->children));
+                
+                auto right = std::make_unique<node>();
+                std::move(std::next(values.begin(), mid+1), values.end(), std::back_inserter(right->values));
+                std::move(std::next(children.begin(), mid+1), children.end(), std::back_inserter(right->children));
+
+                //auto root = std::make_unique<node>();
+                //root->values.emplace_back(std::move(values[mid]));
+                //root->children.emplace_back(std::move(left));
+                //root->children.emplace_back(std::move(right));
+                auto index = parent.insert_into(std::move(values[mid]));
+                parent.set_child(index, left);
+                parent.set_child(index+1, right);
+            }
+
+            auto find_child(Key const & key) -> node *
+            {
+                auto it = std::lower_bound(values.begin(), values.end(), key, [](auto const & v, auto const & key) { return v.first < key; });
+                if (it == values.end())
+                {
+                    if (children.size() == 0)
+                    {
+                        return nullptr;
+                    }
+                    return children.back().get();
+                }
+                if (it->first == key)
+                {
+                    return this;
+                }
+                auto index = std::distance(values.begin(), it);
+                if (it->first < key)
+                {
+                    return children.at(index+1).get();
+                }
+                return children.at(index).get();
+            }
+
+            auto is_leaf() const -> bool
+            {
+                return std::find_if(children.begin(), children.end(), [](auto const & node) { return node != nullptr; }) == children.end();
+            }
+
+            auto insert_into(kv_pair && data) -> size_t
             {
                 auto it = std::lower_bound(values.begin(), values.end(), data, [](auto const & x, auto const & y) {
-                    return x.data.first < y.first;
+                    return x.first < y.first;
                 });
-                return *values.emplace(it, std::move(data));
+                auto index = std::distance(values.begin(), it);
+                values.emplace(it, std::move(data));
+                children.emplace(std::next(children.begin(), index), nullptr);
+                return index;
             }
         };
 
-        auto insert_into_leaf(node & curr, kv_pair && data) -> bool
+        auto print(node const & curr, std::string tab) const -> void
+        {
+            auto index = 0;
+            for (auto const & v : curr.values)
+            {
+                if (index < curr.children.size() and curr.children[index] != nullptr) {
+                    print(*curr.children[index], tab + "  ");
+                }
+                std::cout << tab << "{" << v.first << ", " << v.second << "}\n";
+                ++index;
+            }
+            if (index < curr.children.size() and curr.children[index] != nullptr) { print(*curr.children[index], tab + "  "); }
+        }
+
+        auto insert_into_leaf(node & curr, kv_pair & data) -> bool
         {
             if (not curr.is_leaf())
             {
@@ -126,23 +126,17 @@ namespace txl
                 {
                     throw std::runtime_error{"no child found"};
                 }
-                return insert_into_leaf(*next, std::move(data));
+                if (not insert_into_leaf(*next, data))
+                {
+                    next->split_into(curr);
+                    return curr.num_values() < degree_;
+                }
+                return true;
             }
             
-            if (curr.num_values() >= degree_)
-            {
-                // Split and move up
-                return false;
-            }
             curr.insert_into(std::move(data));
 
-            std::cout << "v TREE-------------------\n";
-            for (auto const & v : curr.values)
-            {
-                std::cout << "{" << v.data.first << ", " << v.data.second << "}\n";
-            }
-            std::cout << "^ TREE-------------------\n";
-            return true;
+            return curr.num_values() < degree_;
         }
 
         std::unique_ptr<node> root_;
@@ -159,10 +153,16 @@ namespace txl
             {
                 root_ = std::make_unique<node>();
             }
-            if (not insert_into_leaf(*root_, std::make_pair(std::move(key), std::move(value))))
+            auto data = std::make_pair(std::move(key), std::move(value));
+            if (not insert_into_leaf(*root_, data))
             {
-                root_ = root_->split();
+                auto new_root = std::make_unique<node>();
+                root_->split_into(*new_root);
+                root_ = std::move(new_root);
             }
+            std::cout << "v TREE-------------------\n";
+            print(*root_, "");
+            std::cout << "^ TREE-------------------\n";
         }
     };
 }
