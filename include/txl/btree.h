@@ -17,6 +17,12 @@ namespace txl
 
         using node_ptr = std::unique_ptr<node>;
 
+        struct find_result final
+        {
+            node * n;
+            size_t index;
+        };
+
         struct node final
         {
             std::vector<node_ptr> children;
@@ -54,10 +60,6 @@ namespace txl
                 std::move(std::next(values.begin(), mid+1), values.end(), std::back_inserter(right->values));
                 std::move(std::next(children.begin(), mid+1), children.end(), std::back_inserter(right->children));
 
-                //auto root = std::make_unique<node>();
-                //root->values.emplace_back(std::move(values[mid]));
-                //root->children.emplace_back(std::move(left));
-                //root->children.emplace_back(std::move(right));
                 auto index = parent.insert_into(std::move(values[mid]));
                 parent.set_child(index, left);
                 parent.set_child(index+1, right);
@@ -102,6 +104,29 @@ namespace txl
                 return index;
             }
         };
+            
+        auto find(node * curr, Key const & key) -> find_result
+        {
+            while (curr)
+            {
+                auto it = std::lower_bound(curr->values.begin(), curr->values.end(), key, [](auto const & v, auto const & key) { return v.first < key; });
+                auto index = std::distance(curr->values.begin(), it);
+                if (it == curr->values.end() or it->first < key)
+                {
+                    curr = curr->children.at(index+1).get();
+                }
+                else if (it->first == key)
+                {
+                    return {curr, index};
+                }
+                else if (it->first > key)
+                {
+                    curr = curr->children.at(index).get();
+                }
+            }
+            return {nullptr, 0};
+        }
+
 
         auto print(node const & curr, std::string tab) const -> void
         {
@@ -139,12 +164,23 @@ namespace txl
             return curr.num_values() < degree_;
         }
 
+        auto remove_from(node & parent, Key const & key) -> bool
+        {
+            auto res = parent.find(key);
+            if (n == 
+        }
+
         std::unique_ptr<node> root_;
         size_t degree_;
     public:
         btree(size_t degree)
             : degree_{degree}
         {
+        }
+
+        auto remove(Key const & key) -> void
+        {
+            remove_from(*root_, key);
         }
 
         auto insert(Key && key, Value && value) -> void
