@@ -3,6 +3,7 @@
 #include <txl/storage.h>
 
 #include <memory>
+#include <optional>
 #include <vector>
 
 namespace txl
@@ -20,7 +21,7 @@ namespace txl
         struct find_result final
         {
             node * n;
-            size_t index;
+            std::optional<size_t> index;
         };
 
         struct node final
@@ -31,6 +32,24 @@ namespace txl
             node()
             {
                 //values.reserve(10);
+            }
+
+            auto release_max() -> kv_pair
+            {
+                auto n = this;
+                while (not n->is_leaf())
+                {
+                    n = n->children.back().get();
+                }
+                auto last = std::move(n->values.back());
+                n->children.erase(n->children.begin() + n->values.size());
+                n->values.erase(n->values.begin() + n->values.size()-1);
+                return last;
+            }
+
+            auto remove_at(size_t index) -> void
+            {
+                values.erase(values.begin() + index);
             }
 
             auto num_values() const -> size_t
@@ -45,7 +64,22 @@ namespace txl
                     children.emplace_back(std::move(child));
                     return;
                 }
+                std::cout << "error2\n";
                 children.at(index) = std::move(child);
+            }
+
+            auto replace_at(size_t index, kv_pair && value) -> void
+            {
+                std::cout << "replace_at()\n";
+                values.at(index) = std::move(value);
+            }
+
+            auto get_successor(size_t index) -> kv_pair
+            {
+                //auto const & key = values.at(index).first;
+                std::cout << "get_successor()\n";
+                auto const & child = children.at(index);
+                return child->release_max();
             }
 
             auto split_into(node & parent) -> void
@@ -83,8 +117,10 @@ namespace txl
                 auto index = std::distance(values.begin(), it);
                 if (it->first < key)
                 {
+                    std::cout << "error3\n";
                     return children.at(index+1).get();
                 }
+                std::cout << "error4\n";
                 return children.at(index).get();
             }
 
@@ -104,6 +140,29 @@ namespace txl
                 return index;
             }
         };
+
+        auto find_next(node * curr, Key const & key) -> find_result
+        {
+            auto it = std::lower_bound(curr->values.begin(), curr->values.end(), key, [](auto const & v, auto const & key) { return v.first < key; });
+            auto index = std::distance(curr->values.begin(), it);
+            if (it == curr->values.end() or it->first < key)
+            {
+                std::cout << "error1 - " << curr->children.size() << " & " << curr->values.size() << "\n";
+                curr = curr->children.at(index).get();
+                return {curr, std::nullopt};
+            }
+            else if (it->first == key)
+            {
+                return {curr, index};
+            }
+            else if (it->first > key)
+            {
+                std::cout << "error5\n";
+                curr = curr->children.at(index).get();
+                return {curr, std::nullopt};
+            }
+            return {nullptr, std::nullopt};
+        }
             
         auto find(node * curr, Key const & key) -> find_result
         {
@@ -113,6 +172,7 @@ namespace txl
                 auto index = std::distance(curr->values.begin(), it);
                 if (it == curr->values.end() or it->first < key)
                 {
+                    std::cout << "error6\n";
                     curr = curr->children.at(index+1).get();
                 }
                 else if (it->first == key)
@@ -121,12 +181,12 @@ namespace txl
                 }
                 else if (it->first > key)
                 {
+                    std::cout << "error7\n";
                     curr = curr->children.at(index).get();
                 }
             }
             return {nullptr, 0};
         }
-
 
         auto print(node const & curr, std::string tab) const -> void
         {
@@ -164,10 +224,30 @@ namespace txl
             return curr.num_values() < degree_;
         }
 
-        auto remove_from(node & parent, Key const & key) -> bool
+        auto remove_from(node & parent, Key const & key) -> find_result
         {
-            auto res = parent.find(key);
-            if (n == 
+            auto res = find_next(&parent, key);
+            if (res.n and res.index)
+            {
+                if (res.n->is_leaf())
+                {
+                    res.n->remove_at(*res.index);
+                    res.n->children.erase(res.n->children.begin() + *res.index);
+                    return res;
+                }
+                
+                // Find successor or merge
+                res.n->replace_at(*res.index, std::move(res.n->get_successor(*res.index)));
+                return res;
+            }
+            if (res.n)
+            {
+                remove_from(*res.n, key);
+
+                return res;
+            }
+        
+            return res;
         }
 
         std::unique_ptr<node> root_;
@@ -196,6 +276,10 @@ namespace txl
                 root_->split_into(*new_root);
                 root_ = std::move(new_root);
             }
+        }
+
+        auto print() const -> void
+        {
             std::cout << "v TREE-------------------\n";
             print(*root_, "");
             std::cout << "^ TREE-------------------\n";

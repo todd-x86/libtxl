@@ -15,7 +15,12 @@ TXL_UNIT_TEST(simple)
     bt.insert("Len Brennan", 7);
     bt.insert("Dick Byrne", 8);
     bt.insert("Cyril MacDuff", 9);
-    
+
+    bt.print();
+    bt.remove("Mrs. Doyle");
+    bt.remove("Ted Crilly");
+    bt.print();
+
     /*txl::btree<int, int> bt{7};
     
     for (auto i = 100; i >= 0; i -= 1) {
