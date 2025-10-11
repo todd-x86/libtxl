@@ -281,23 +281,20 @@ namespace txl
                 curr.values.erase(curr.values.begin() + curr.values.size() - 1);
                 return res;
             }
-            auto res = steal_max(curr.children.back());
-            rebalance(curr, curr.children.size()-1);
+            auto res = steal_max(*curr.children.back());
+            if (underflows(*curr.children.back()))
+            {
+                rebalance(*curr.children.back(), *curr.children.at(curr.children.size()-2), curr);
+            }
             return res;
+        }
+
+        auto rebalance(node & n, node & sibling, node & parent) -> void
+        {
+            n.
         }
 
         auto merge(node & parent, node & lchild, node & rchild) -> node
-        {
-            node res{};
-            std::move(lchild.values.begin(), lchild.values.end(), std::back_inserter(res.values));
-            std::move(parent.values.begin(), parent.values.end(), std::back_inserter(res.values));
-            std::move(rchild.values.begin(), rchild.values.end(), std::back_inserter(res.values));
-            std::move(lchild.children.begin(), lchild.children.end(), std::back_inserter(res.children));
-            std::move(rchild.children.begin(), rchild.children.end(), std::back_inserter(res.children));
-            return res;
-        }
-
-        auto rebalance(node & curr, size_t child_index) -> bool
         {
             /*
                     (A)          ()        (A,B)
@@ -316,12 +313,13 @@ namespace txl
                     remove()           merge()          merge()         lift()
 
              */
-            if (not underflows(*curr.children.at(child_index)))
-            {
-                return false;
-            }
-            curr = merge(curr, *curr.children.at(child_index), *curr.children.at(child_index+1));
-            return true;
+            node res{};
+            std::move(lchild.values.begin(), lchild.values.end(), std::back_inserter(res.values));
+            std::move(parent.values.begin(), parent.values.end(), std::back_inserter(res.values));
+            std::move(rchild.values.begin(), rchild.values.end(), std::back_inserter(res.values));
+            std::move(lchild.children.begin(), lchild.children.end(), std::back_inserter(res.children));
+            std::move(rchild.children.begin(), rchild.children.end(), std::back_inserter(res.children));
+            return res;
         }
 
         auto underflows(node const & curr) const -> bool
