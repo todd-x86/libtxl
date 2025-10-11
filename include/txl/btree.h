@@ -20,24 +20,8 @@ namespace txl
 
         struct find_result final
         {
-            size_t index_of_node;
-            node * n;
-            std::optional<size_t> index;
-
-            auto not_found() const -> bool
-            {
-                return n == nullptr;
-            }
-
-            auto is_found() const -> bool
-            {
-                return n != nullptr and index.has_value();
-            }
-
-            auto is_leaf() const -> bool
-            {
-                return n != nullptr and n->is_leaf();
-            }
+            size_t index;
+            bool found;
         };
 
         struct node final
@@ -48,6 +32,16 @@ namespace txl
             node()
             {
                 //values.reserve(10);
+            }
+
+            auto child(size_t index) -> node &
+            {
+                return *children.at(index);
+            }
+            
+            auto replace_at(size_t index, node && n) -> void
+            {
+                children.at(index) = std::move(n);
             }
 
             auto release_max() -> kv_pair
@@ -140,23 +134,33 @@ namespace txl
                 return children.at(index).get();
             }
 
-            auto find_key(Key const & key) -> find_result
+            auto index_of(Key const & key) -> find_result
             {
                 auto it = std::lower_bound(values.begin(), values.end(), key, [](auto const & v, auto const & key) { return v.first < key; });
                 auto index = std::distance(values.begin(), it);
                 if (it == values.end() or it->first < key)
                 {
-                    return {index, children.at(index).get(), std::nullopt};
+                    return {static_cast<size_t>(index), false};
                 }
                 else if (it->first == key)
                 {
-                    return {index, this, index};
+                    return {static_cast<size_t>(index), true};
                 }
                 else if (it->first > key)
                 {
-                    return {index, children.at(index).get(), std::nullopt};
+                    return {static_cast<size_t>(index), false};
                 }
-                return {index, nullptr, std::nullopt};
+                return {static_cast<size_t>(index), false};
+            }
+
+            auto left_child(size_t index) -> node &
+            {
+                return *children.at(index);
+            }
+
+            auto right_child(size_t index) -> node &
+            {
+                return *children.at(index+1);
             }
 
             auto is_leaf() const -> bool
@@ -238,61 +242,41 @@ namespace txl
 
         auto remove_from(node & curr, Key const & key) -> bool
         {
-            auto find_res = curr.find_key(key);
-            if (find_res.is_found())
+            auto res = curr.index_of(key);
+            if (not res.found)
             {
-                if (find_res.is_leaf())
+                if (curr.is_leaf())
                 {
-                    find_res.n->remove_at(*find_res.index);
-                    return true;
+                    // Not found
+                    return false;
                 }
-                else
-                {
-                    find_res.n->values.at(*find_res.index) = steal_from(*find_res.n, *find_res.index);
-                }
-                // TODO: is this only for leaf nodes?
-                rebalance(curr, find_res.index_of_node);
-                return true;
+            
+                // Find the next level
+                return remove_from(curr.child(res.index), key);
             }
-            if (find_res.not_found())
-            {
-                return false;
-            }
-            if (remove_from(*find_res.n, key))
-            {
-                rebalance(curr, find_res.index_of_node);
-                return true;
-            }
-            return false;
-        }
-
-        auto steal_from(node & curr, size_t left_index) -> kv_pair
-        {
-            // Max of left
-            // TODO: if left_index >= curr.children.size()
-            return steal_max(curr.children.at(left_index));
-        }
-
-        auto steal_max(node & curr) -> kv_pair
-        {
+  
             if (curr.is_leaf())
             {
-                auto res = std::move(curr.values.back());
-                curr.values.erase(curr.values.begin() + curr.values.size() - 1);
-                return res;
+                curr.remove_at(res.index);
+                return true;
             }
-            auto res = steal_max(*curr.children.back());
-            if (underflows(*curr.children.back()))
-            {
-                rebalance(*curr.children.back(), *curr.children.at(curr.children.size()-2), curr);
-            }
-            return res;
+              
+            curr.replace_at(res.index, steal_max(curr.child(res.index)));
+            return true;
         }
 
-        auto rebalance(node & n, node & sibling, node & parent) -> void
+        auto steal_max(node & n) -> kv_pair
         {
-            n.
+            if (n.is_leaf())
+            {
+                auto res = std::move(n.values.back());
+                n.remove_at(n.values.size()-1);
+                return res;
+            }
+
+            return steal_max(n.child(n.children.size()-1));
         }
+
 
         auto merge(node & parent, node & lchild, node & rchild) -> node
         {
