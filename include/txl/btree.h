@@ -20,8 +20,24 @@ namespace txl
 
         struct find_result final
         {
+            size_t index_of_node;
             node * n;
             std::optional<size_t> index;
+
+            auto not_found() const -> bool
+            {
+                return n == nullptr;
+            }
+
+            auto is_found() const -> bool
+            {
+                return n != nullptr and index.has_value();
+            }
+
+            auto is_leaf() const -> bool
+            {
+                return n != nullptr and n->is_leaf();
+            }
         };
 
         struct node final
@@ -124,6 +140,25 @@ namespace txl
                 return children.at(index).get();
             }
 
+            auto find_key(Key const & key) -> find_result
+            {
+                auto it = std::lower_bound(values.begin(), values.end(), key, [](auto const & v, auto const & key) { return v.first < key; });
+                auto index = std::distance(values.begin(), it);
+                if (it == values.end() or it->first < key)
+                {
+                    return {index, children.at(index).get(), std::nullopt};
+                }
+                else if (it->first == key)
+                {
+                    return {index, this, index};
+                }
+                else if (it->first > key)
+                {
+                    return {index, children.at(index).get(), std::nullopt};
+                }
+                return {index, nullptr, std::nullopt};
+            }
+
             auto is_leaf() const -> bool
             {
                 return std::find_if(children.begin(), children.end(), [](auto const & node) { return node != nullptr; }) == children.end();
@@ -140,29 +175,6 @@ namespace txl
                 return index;
             }
         };
-
-        auto find_next(node * curr, Key const & key) -> find_result
-        {
-            auto it = std::lower_bound(curr->values.begin(), curr->values.end(), key, [](auto const & v, auto const & key) { return v.first < key; });
-            auto index = std::distance(curr->values.begin(), it);
-            if (it == curr->values.end() or it->first < key)
-            {
-                std::cout << "error1 - " << curr->children.size() << " & " << curr->values.size() << "\n";
-                curr = curr->children.at(index).get();
-                return {curr, std::nullopt};
-            }
-            else if (it->first == key)
-            {
-                return {curr, index};
-            }
-            else if (it->first > key)
-            {
-                std::cout << "error5\n";
-                curr = curr->children.at(index).get();
-                return {curr, std::nullopt};
-            }
-            return {nullptr, std::nullopt};
-        }
             
         auto find(node * curr, Key const & key) -> find_result
         {
@@ -224,30 +236,98 @@ namespace txl
             return curr.num_values() < degree_;
         }
 
-        auto remove_from(node & parent, Key const & key) -> find_result
+        auto remove_from(node & curr, Key const & key) -> bool
         {
-            auto res = find_next(&parent, key);
-            if (res.n and res.index)
+            auto find_res = curr.find_key(key);
+            if (find_res.is_found())
             {
-                if (res.n->is_leaf())
+                if (find_res.is_leaf())
                 {
-                    res.n->remove_at(*res.index);
-                    res.n->children.erase(res.n->children.begin() + *res.index);
-                    return res;
+                    find_res.n->remove_at(*find_res.index);
+                    return true;
                 }
-                
-                // Find successor or merge
-                res.n->replace_at(*res.index, std::move(res.n->get_successor(*res.index)));
-                return res;
+                else
+                {
+                    find_res.n->values.at(*find_res.index) = steal_from(*find_res.n, *find_res.index);
+                }
+                // TODO: is this only for leaf nodes?
+                rebalance(curr, find_res.index_of_node);
+                return true;
             }
-            if (res.n)
+            if (find_res.not_found())
             {
-                remove_from(*res.n, key);
+                return false;
+            }
+            if (remove_from(*find_res.n, key))
+            {
+                rebalance(curr, find_res.index_of_node);
+                return true;
+            }
+            return false;
+        }
 
+        auto steal_from(node & curr, size_t left_index) -> kv_pair
+        {
+            // Max of left
+            // TODO: if left_index >= curr.children.size()
+            return steal_max(curr.children.at(left_index));
+        }
+
+        auto steal_max(node & curr) -> kv_pair
+        {
+            if (curr.is_leaf())
+            {
+                auto res = std::move(curr.values.back());
+                curr.values.erase(curr.values.begin() + curr.values.size() - 1);
                 return res;
             }
-        
+            auto res = steal_max(curr.children.back());
+            rebalance(curr, curr.children.size()-1);
             return res;
+        }
+
+        auto merge(node & parent, node & lchild, node & rchild) -> node
+        {
+            node res{};
+            std::move(lchild.values.begin(), lchild.values.end(), std::back_inserter(res.values));
+            std::move(parent.values.begin(), parent.values.end(), std::back_inserter(res.values));
+            std::move(rchild.values.begin(), rchild.values.end(), std::back_inserter(res.values));
+            std::move(lchild.children.begin(), lchild.children.end(), std::back_inserter(res.children));
+            std::move(rchild.children.begin(), rchild.children.end(), std::back_inserter(res.children));
+            return res;
+        }
+
+        auto rebalance(node & curr, size_t child_index) -> bool
+        {
+            /*
+                    (A)          ()        (A,B)
+                   /  \    ->    |    ->   
+                 ()    (B)     (A,B)
+
+                  remove()     (merge)      (lift)
+
+
+                       (C)              (C)                ()             (C,D)
+                      /   \            /   \               |              / | \
+                    (A)   (D)   ->   ()     (D)    ->    (C,D)     -> (A,B)(E)(F) 
+                    / \   / \        |      / \          / | \
+                  ()  (B)(E)(F)     (A,B) (E) (F)    (A,B)(E)(F)
+                  
+                    remove()           merge()          merge()         lift()
+
+             */
+            if (not underflows(*curr.children.at(child_index)))
+            {
+                return false;
+            }
+            curr = merge(curr, *curr.children.at(child_index), *curr.children.at(child_index+1));
+            return true;
+        }
+
+        auto underflows(node const & curr) const -> bool
+        {
+            // FIXME: use proper degree
+            return curr.values.size() < 1;
         }
 
         std::unique_ptr<node> root_;
