@@ -24,6 +24,12 @@ namespace txl
             bool found;
         };
 
+        struct remove_result final
+        {
+            bool found;
+            bool rebalance;
+        };
+
         struct node final
         {
             std::vector<node_ptr> children;
@@ -240,7 +246,7 @@ namespace txl
             return curr.num_values() < degree_;
         }
 
-        auto remove_from(node & curr, Key const & key) -> bool
+        auto remove_from(node & curr, Key const & key) -> remove_result
         {
             auto res = curr.index_of(key);
             if (not res.found)
@@ -248,21 +254,33 @@ namespace txl
                 if (curr.is_leaf())
                 {
                     // Not found
-                    return false;
+                    return {false, false};
                 }
             
                 // Find the next level
-                return remove_from(curr.child(res.index), key);
+                auto child_res = remove_from(curr.child(res.index), key);
+                if (child_res.rebalance)
+                {
+                    if (res.index >= curr.children.size()-1)
+                    {
+                        rebalance(curr, res.index, curr.child(res.index-1), curr.child(res.index));
+                    }
+                    else
+                    {
+                        rebalance(curr, res.index, curr.child(res.index), curr.child(res.index+1));
+                    }
+                }
+                return child_res;
             }
   
             if (curr.is_leaf())
             {
                 curr.remove_at(res.index);
-                return true;
+                return {true, true};
             }
               
             curr.replace_at(res.index, steal_max(curr.child(res.index)));
-            return true;
+            return {true, true};
         }
 
         auto steal_max(node & n) -> kv_pair
@@ -274,11 +292,70 @@ namespace txl
                 return res;
             }
 
-            return steal_max(n.child(n.children.size()-1));
+            auto res = steal_max(n.child(n.children.size()-1));
+            rebalance(n, n.children.size()-1, n.child(n.children.size()-2), n.child(n.children.size()-1));
+            return res;
+        }
+
+        auto rebalance(node & parent, size_t parent_value_index, node & lchild, node & rchild) -> bool
+        {
+            // parent should never need to be checked, just lchild and rchild
+            auto lchild_underflows = (lchild.values.size() < 1);
+            auto rchild_underflows = (lchild.values.size() < 1);
+            auto borrow_from_lchild = lchild.values.size() > 1;
+            auto borrow_from_rchild = rchild.values.size() > 1;
+
+            if (lchild_underflows and borrow_from_rchild)
+            {
+                // Rotate left
+                rotate_left(parent, parent_value_index, lchild, rchild);
+                return true;
+            }
+            if (rchild_underflows and borrow_from_lchild)
+            {
+                // Rotate right
+                rotate_right(parent, parent_value_index, lchild, rchild);
+                return true;
+            }
+            if (lchild_underflows or rchild_underflows)
+            {
+                // Merge
+                merge(parent, parent_value_index, lchild, rchild);
+                return true;
+            }
+
+            return false;
+        }
+
+        auto rotate_left(node & parent, size_t parent_value_index, node & lchild, node & rchild) -> void
+        {
+            /*
+                    (A)           (B)
+                   /  \    ->     / \
+                 ()    (B,C)    (A)  (C)
+            */
+        }
+
+        auto rotate_right(node & parent, size_t parent_value_index, node & lchild, node & rchild) -> void
+        {
+            /*
+                    (C)           (B)
+                   /  \    ->     / \
+                (A,B)  ()       (A)  (C)
+            */
+        }
+
+        auto merge(node & parent, size_t parent_value_index, node & lchild, node & rchild) -> void
+        {
+            /*
+                    (A)          ()
+                   /  \    ->    |
+                 ()    (B)     (A,B)
+            */
         }
 
 
-        auto merge(node & parent, node & lchild, node & rchild) -> node
+        auto merge_old(node & parent, node & lchild, node & rchild) -> node
         {
             /*
                     (A)          ()        (A,B)
