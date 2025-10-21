@@ -40,6 +40,21 @@ namespace txl
                 //values.reserve(10);
             }
 
+            auto num_children() const -> size_t
+            {
+                return std::count_if(children.begin(), children.end(), [](auto const & c) { return c != nullptr; });
+            }
+            
+            auto free_child_index() const -> size_t
+            {
+                auto it = std::find_if(children.begin(), children.end(), [](auto const & c) { return c != nullptr; });
+                if (it == children.end())
+                {
+                    throw std::runtime_error{"no free child"};
+                }
+                return std::distance(children.begin(), it);
+            }
+
             auto child(size_t index) -> node &
             {
                 return *children.at(index);
@@ -80,13 +95,12 @@ namespace txl
                     children.emplace_back(std::move(child));
                     return;
                 }
-                std::cout << "error2\n";
                 children.at(index) = std::move(child);
             }
 
             auto replace_at(size_t index, kv_pair && value) -> void
             {
-                std::cout << "replace_at()\n";
+                std::cout << "replace " << values.at(index).first << " with " << value.first << "\n";
                 values.at(index) = std::move(value);
             }
 
@@ -133,10 +147,8 @@ namespace txl
                 auto index = std::distance(values.begin(), it);
                 if (it->first < key)
                 {
-                    std::cout << "error3\n";
                     return children.at(index+1).get();
                 }
-                std::cout << "error4\n";
                 return children.at(index).get();
             }
 
@@ -194,7 +206,6 @@ namespace txl
                 auto index = std::distance(curr->values.begin(), it);
                 if (it == curr->values.end() or it->first < key)
                 {
-                    std::cout << "error6\n";
                     curr = curr->children.at(index+1).get();
                 }
                 else if (it->first == key)
@@ -203,7 +214,6 @@ namespace txl
                 }
                 else if (it->first > key)
                 {
-                    std::cout << "error7\n";
                     curr = curr->children.at(index).get();
                 }
             }
@@ -263,11 +273,14 @@ namespace txl
                 {
                     if (res.index >= curr.children.size()-1)
                     {
-                        rebalance(curr, res.index, curr.child(res.index-1), curr.child(res.index));
+                        std::cout << "0 CHILD IS: " << curr.child(res.index).values.size() << " VALUES\n";
+                        rebalance(curr, res.index-1, curr.child(res.index-1), curr.child(res.index));
                     }
                     else
                     {
-                        rebalance(curr, res.index, curr.child(res.index), curr.child(res.index+1));
+                        std::cout << "1 CHILD IS: " << curr.child(res.index).values.size() << " VALUES -- parent = " << curr.values.at(res.index).first << "\n";
+                        // FIXME: off by 1???
+                        rebalance(curr, res.index-1, curr.child(res.index-1), curr.child(res.index));
                     }
                 }
                 return child_res;
@@ -280,6 +293,7 @@ namespace txl
             }
               
             curr.replace_at(res.index, steal_max(curr.child(res.index)));
+            rebalance(curr, res.index, curr.child(res.index), curr.child(res.index+1));
             return {true, true};
         }
 
@@ -293,7 +307,7 @@ namespace txl
             }
 
             auto res = steal_max(n.child(n.children.size()-1));
-            rebalance(n, n.children.size()-1, n.child(n.children.size()-2), n.child(n.children.size()-1));
+            rebalance(n, n.values.size()-1, n.child(n.children.size()-2), n.child(n.children.size()-1));
             return res;
         }
 
@@ -301,10 +315,9 @@ namespace txl
         {
             // parent should never need to be checked, just lchild and rchild
             auto lchild_underflows = (lchild.values.size() < 1);
-            auto rchild_underflows = (lchild.values.size() < 1);
+            auto rchild_underflows = (rchild.values.size() < 1);
             auto borrow_from_lchild = lchild.values.size() > 1;
             auto borrow_from_rchild = rchild.values.size() > 1;
-
             if (lchild_underflows and borrow_from_rchild)
             {
                 // Rotate left
@@ -333,7 +346,13 @@ namespace txl
                     (A)           (B)
                    /  \    ->     / \
                  ()    (B,C)    (A)  (C)
+
             */
+            std::cout << "ROTATE LEFT (lc=" << lchild.children.size() << ", rc=" << rchild.children.size() << ")\n";
+            lchild.insert_into(std::move(parent.values.front()));
+            parent.remove_at(0);
+            parent.insert_into(std::move(rchild.values.front()));
+            rchild.remove_at(0);
         }
 
         auto rotate_right(node & parent, size_t parent_value_index, node & lchild, node & rchild) -> void
@@ -343,6 +362,11 @@ namespace txl
                    /  \    ->     / \
                 (A,B)  ()       (A)  (C)
             */
+            std::cout << "ROTATE RIGHT (lc=" << lchild.children.size() << ", rc=" << rchild.children.size() << ")\n";
+            rchild.insert_into(std::move(parent.values.back()));
+            parent.remove_at(parent.values.size()-1);
+            parent.insert_into(std::move(lchild.values.back()));
+            lchild.remove_at(lchild.values.size()-1);
         }
 
         auto merge(node & parent, size_t parent_value_index, node & lchild, node & rchild) -> void
@@ -351,6 +375,47 @@ namespace txl
                     (A)          ()
                    /  \    ->    |
                  ()    (B)     (A,B)
+            */
+            print();
+
+            std::cout << "MERGE\n";
+            std::cout << " -- [0," << parent_value_index << "," << parent.values.size()-1 << "]=values, [0," << parent_value_index << "," << parent.children.size()-1 << "]=children\n";
+            std::cout << "{" << parent.values.at(parent_value_index).first << " (parent)";
+            for (auto const & kv : lchild.values)
+            {
+                std::cout << ", " << kv.first << " (left)";
+            }
+            for (auto const & kv : rchild.values)
+            {
+                std::cout << ", " << kv.first << " (right)";
+            }
+            std::cout << "}\n";
+
+            lchild.insert_into(std::move(parent.values.at(parent_value_index)));
+            parent.remove_at(parent_value_index);
+
+            std::cout << "TODO: lchild.children=" << lchild.num_children() << ", rchild.children=" << rchild.num_children() << "\n";
+            auto rchildren = rchild.num_children();
+            for (auto i = 0; i < rchildren; ++i)
+            {
+                std::cout << "RCHILD[" << i << "]: " << rchild.children.at(i)->values.at(0).first << "\n";
+                lchild.children.at(lchild.num_children()) = std::move(rchild.children.at(i));
+            }
+            std::move(rchild.values.begin(), rchild.values.end(), std::back_inserter(lchild.values));
+            rchild.values.clear();
+            
+            parent.children.erase(parent.children.begin() + parent_value_index + 1);
+
+            /*if (parent_value_index < parent.values.size())
+            {
+                lchild.insert_into(std::move(parent.values.at(parent_value_index)));
+            }
+            parent.remove_at(parent_value_index);
+            std::move(rchild.values.begin(), rchild.values.end(), std::back_inserter(lchild.values));
+            std::move(rchild.children.begin(), rchild.children.end(), std::back_inserter(lchild.children));
+            //rchild.values.clear();
+            // TODO: is this rchild?
+            parent.children.erase(parent.children.begin() + parent_value_index + 1);
             */
         }
 
@@ -399,7 +464,9 @@ namespace txl
 
         auto remove(Key const & key) -> void
         {
+            std::cout << "REMOVE(" << key << ")\n";
             remove_from(*root_, key);
+            // TODO: check for 1 child, move up
         }
 
         auto insert(Key && key, Value && value) -> void

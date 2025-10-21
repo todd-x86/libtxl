@@ -34,13 +34,13 @@ namespace txl
     public:
         template<class Opt>
         optional_ref(std::optional<Opt> & data)
-            : data_{&(*data)}
+            : data_{data.has_value() ? &(*data) : nullptr}
         {
         }
         
         template<class Opt>
         optional_ref(std::optional<Opt> const & data)
-            : data_{const_cast<Opt *>(&(*data))}
+            : data_{data.has_value() ? const_cast<Opt *>(&(*data)) : nullptr}
         {
         }
 

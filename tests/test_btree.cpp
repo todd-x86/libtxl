@@ -25,9 +25,27 @@ TXL_UNIT_TEST(simple)
     */
     txl::btree<int, int> bt{3};
     
-    for (auto i = 20; i >= 0; i -= 1) {
+    /*for (auto i = 20; i >= 0; i -= 1) {
       bt.insert(std::move(i), i*10);
-    }
+    }*/
+
+    bt.insert(1,1);
+    bt.insert(2,2);
+    bt.insert(3,3);
+    bt.insert(4,4);
+    bt.insert(5,5);
+    bt.insert(8,8);
+    bt.insert(10,10);
+    bt.insert(12,12);
+    bt.insert(14,14);
+    //bt.insert(15,15);
+    bt.insert(17,17);
+    bt.insert(19,19);
+
+    bt.print();
+    //bt.remove(12);
+    //bt.remove(8);
+    bt.remove(17);
     bt.print();
 }
 

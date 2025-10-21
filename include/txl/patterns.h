@@ -260,6 +260,40 @@ namespace txl
         return false;
     }
 
+    template<class ContainerOrView, class Key>
+    inline auto lower_bound(ContainerOrView const & container, Key const & key)
+    {
+        return std::lower_bound(container.begin(), container.end(), key);
+    }
+
+    template<class ContainerOrView, class Key, class CompareFunc>
+    inline auto lower_bound(ContainerOrView const & container, Key const & key, CompareFunc comp)
+    {
+        return std::lower_bound(container.begin(), container.end(), key, comp);
+    }
+
+    template<class Value>
+    inline auto optional_to_ptr(std::optional<Value> const & opt) -> Value const *
+    {
+        if (opt)
+        {
+            return &opt.value();
+        }
+
+        return nullptr;
+    }
+
+    template<class Value>
+    inline auto optional_to_ptr(std::optional<Value> & opt) -> Value *
+    {
+        if (opt)
+        {
+            return &opt.value();
+        }
+
+        return nullptr;
+    }
+
     template<class Container, class ValueOrFunc>
     inline auto try_emplace(Container & container, typename Container::key_type const & key, ValueOrFunc value_or_func) -> bool
     {
@@ -315,26 +349,16 @@ namespace txl
         }
         return res;
     }
-
-    template<class Value>
-    inline auto optional_to_ptr(std::optional<Value> const & opt) -> Value const *
+    
+    template<class ContainerOrView, class Key>
+    inline auto upper_bound(ContainerOrView const & container, Key const & key)
     {
-        if (opt)
-        {
-            return &opt.value();
-        }
-
-        return nullptr;
+        return std::upper_bound(container.begin(), container.end(), key);
     }
 
-    template<class Value>
-    inline auto optional_to_ptr(std::optional<Value> & opt) -> Value *
+    template<class ContainerOrView, class Key, class CompareFunc>
+    inline auto upper_bound(ContainerOrView const & container, Key const & key, CompareFunc comp)
     {
-        if (opt)
-        {
-            return &opt.value();
-        }
-
-        return nullptr;
+        return std::upper_bound(container.begin(), container.end(), key, comp);
     }
 }
