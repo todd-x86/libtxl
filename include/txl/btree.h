@@ -40,6 +40,14 @@ namespace txl
                 //values.reserve(10);
             }
 
+            auto print_children() const -> void
+            {
+                for (auto const & c : children)
+                {
+                    std::cout << " - " << c.
+                }
+            }
+
             auto num_children() const -> size_t
             {
                 return std::count_if(children.begin(), children.end(), [](auto const & c) { return c != nullptr; });
@@ -391,7 +399,9 @@ namespace txl
             }
             std::cout << "}\n";
 
+            lchild.print_children();
             lchild.insert_into(std::move(parent.values.at(parent_value_index)));
+            lchild.print_children();
             parent.remove_at(parent_value_index);
 
             std::cout << "TODO: lchild.children=" << lchild.num_children() << ", rchild.children=" << rchild.num_children() << "\n";

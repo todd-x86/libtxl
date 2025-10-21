@@ -5,6 +5,7 @@
 
 TXL_UNIT_TEST(simple)
 {
+    t status
     /*
     txl::btree<std::string, int> bt{3};
     bt.insert("Ted Crilly", 1);
