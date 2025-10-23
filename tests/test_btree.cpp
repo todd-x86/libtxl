@@ -5,7 +5,6 @@
 
 TXL_UNIT_TEST(simple)
 {
-    t status
     /*
     txl::btree<std::string, int> bt{3};
     bt.insert("Ted Crilly", 1);
@@ -26,11 +25,19 @@ TXL_UNIT_TEST(simple)
     */
     txl::btree<int, int> bt{3};
     
-    /*for (auto i = 20; i >= 0; i -= 1) {
+    for (auto i = 20; i >= 0; i -= 1) {
       bt.insert(std::move(i), i*10);
-    }*/
+    }
 
-    bt.insert(1,1);
+    bt.print();
+    bt.remove(10);
+    //bt.print();
+    bt.remove(5);
+    bt.remove(17);
+    bt.remove(11);
+    bt.print();
+
+    /*bt.insert(1,1);
     bt.insert(2,2);
     bt.insert(3,3);
     bt.insert(4,4);
@@ -39,15 +46,15 @@ TXL_UNIT_TEST(simple)
     bt.insert(10,10);
     bt.insert(12,12);
     bt.insert(14,14);
-    //bt.insert(15,15);
+    bt.insert(15,15);
     bt.insert(17,17);
     bt.insert(19,19);
 
     bt.print();
     //bt.remove(12);
-    //bt.remove(8);
-    bt.remove(17);
-    bt.print();
+    bt.remove(8);
+    //bt.remove(17);
+    bt.print();*/
 }
 
 
