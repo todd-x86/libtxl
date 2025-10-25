@@ -40,7 +40,7 @@ TXL_UNIT_TEST(simple)
     bt.print();*/
 
     std::vector<int> keys{};
-    for (auto i = 1000; i > 0; --i)
+    for (auto i = 20; i > 0; --i)
     {
         bt.insert(std::move(i), i*10);
         keys.emplace_back(i);

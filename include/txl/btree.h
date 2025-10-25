@@ -40,6 +40,26 @@ namespace txl
                 //values.reserve(10);
             }
 
+            auto validate() const -> void
+            {
+                size_t num_empty = 0, num_non_empty = 0;
+                for (auto const & c : children)
+                {
+                    if (c == nullptr)
+                    {
+                        num_empty++;
+                    }
+                    else
+                    {
+                        num_non_empty++;
+                    }
+                }
+                if (num_empty != 0 and num_non_empty != 0)
+                {
+                    throw std::runtime_error{"some empty child nodes with non-empty child nodes"};
+                }
+            }
+
             auto print_children() const -> void
             {
 		std::cout << "{" << std::endl;
@@ -301,6 +321,8 @@ namespace txl
                     {
                         std::cout << "PROMOTE!\n";
                         curr.children.at(res.index) = std::move(curr.children.at(res.index)->children.at(0));
+                        curr.validate();
+                        curr.children.at(res.index)->validate();
                     }
                 }
                 return child_res;
@@ -376,7 +398,7 @@ namespace txl
 
             */
             std::cout << "ROTATE LEFT BEFORE\n";
-            //print(parent, "- ");
+            print(parent, "- ");
             auto next_left_val = std::move(parent.values.front());
             parent.remove_at(0);
 
@@ -390,8 +412,12 @@ namespace txl
             lchild.children.emplace_back(std::move(next_left_child));
             
 
-            //std::cout << "ROTATE LEFT AFTER\n";
-            //print(parent, "+ ");
+            std::cout << "ROTATE LEFT AFTER\n";
+            print(parent, "+ ");
+
+            lchild.validate();
+            rchild.validate();
+            parent.validate();
         }
 
         auto rotate_right(node & parent, size_t parent_value_index, node & lchild, node & rchild) -> void
@@ -402,6 +428,7 @@ namespace txl
                 (A,B)  ()       (A)  (C)
             */
             std::cout << "ROTATE RIGHT BEFORE\n";
+            print(parent, "- ");
             auto next_right_val = std::move(parent.values.back());
             parent.remove_at(parent.values.size()-1);
 
@@ -415,13 +442,12 @@ namespace txl
             rchild.values.emplace(rchild.values.begin(), std::move(next_right_val));
             rchild.children.emplace(rchild.children.begin(), std::move(next_right_child));
             
-
-            //lchild.insert_into(std::move(parent.values.front()));
-            //parent.remove_at(0);
-            //parent.insert_into(std::move(rchild.values.front()));
-            //rchild.remove_at(0);
-            //std::cout << "ROTATE LEFT AFTER\n";
-            //print(parent, "+ ");
+            std::cout << "ROTATE RIGHT AFTER\n";
+            print(parent, "+ ");
+            
+            lchild.validate();
+            rchild.validate();
+            parent.validate();
         }
 
         auto merge(node & parent, size_t parent_value_index, node & lchild, node & rchild) -> void
@@ -431,14 +457,11 @@ namespace txl
                    /  \    ->    |
                  ()    (B)     (A,B)
             */
-            print();
-
             std::cout << "MERGE\n";
             auto new_index = lchild.insert_into(std::move(parent.values.at(parent_value_index == parent.values.size() ? parent_value_index-1 : parent_value_index)));
 	    lchild.remove_child_at(new_index);
 	    // TODO: why off by 1?
 	    lchild.children.emplace(lchild.children.begin() + new_index + 1, nullptr);
-            lchild.print_children();
             parent.remove_at(parent_value_index);
 
             auto rchildren = rchild.num_children();
@@ -458,36 +481,12 @@ namespace txl
             rchild.values.clear();
             
             parent.remove_child_at(parent_value_index + 1);
+            
+            lchild.validate();
+            //rchild.validate();
+            parent.validate();
         }
 
-
-        auto merge_old(node & parent, node & lchild, node & rchild) -> node
-        {
-            /*
-                    (A)          ()        (A,B)
-                   /  \    ->    |    ->   
-                 ()    (B)     (A,B)
-
-                  remove()     (merge)      (lift)
-
-
-                       (C)              (C)                ()             (C,D)
-                      /   \            /   \               |              / | \
-                    (A)   (D)   ->   ()     (D)    ->    (C,D)     -> (A,B)(E)(F) 
-                    / \   / \        |      / \          / | \
-                  ()  (B)(E)(F)     (A,B) (E) (F)    (A,B)(E)(F)
-                  
-                    remove()           merge()          merge()         lift()
-
-             */
-            node res{};
-            std::move(lchild.values.begin(), lchild.values.end(), std::back_inserter(res.values));
-            std::move(parent.values.begin(), parent.values.end(), std::back_inserter(res.values));
-            std::move(rchild.values.begin(), rchild.values.end(), std::back_inserter(res.values));
-            std::move(lchild.children.begin(), lchild.children.end(), std::back_inserter(res.children));
-            std::move(rchild.children.begin(), rchild.children.end(), std::back_inserter(res.children));
-            return res;
-        }
 
         auto underflows(node const & curr) const -> bool
         {
