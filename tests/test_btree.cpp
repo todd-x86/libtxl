@@ -25,7 +25,7 @@ TXL_UNIT_TEST(simple)
     */
     txl::btree<int, int> bt{3};
     
-    for (auto i = 20; i >= 0; i -= 1) {
+    /*for (auto i = 20; i >= 0; i -= 1) {
       bt.insert(std::move(i), i*10);
     }
 
@@ -35,6 +35,21 @@ TXL_UNIT_TEST(simple)
     bt.remove(5);
     bt.remove(17);
     bt.remove(11);
+    bt.remove(9);
+    bt.remove(6);
+    bt.print();*/
+
+    std::vector<int> keys{};
+    for (auto i = 1000; i > 0; --i)
+    {
+        bt.insert(std::move(i), i*10);
+        keys.emplace_back(i);
+    }
+    std::random_shuffle(keys.begin(), keys.end());
+    for (auto k : keys)
+    {
+        bt.remove(k);
+    }
     bt.print();
 
     /*bt.insert(1,1);
