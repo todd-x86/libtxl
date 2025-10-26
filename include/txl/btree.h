@@ -392,7 +392,7 @@ namespace txl
 
             auto next_right_child = std::move(lchild.children.back());
             auto old_idx = lchild.values.size();
-            lchild.remove_at(old_idx);
+            lchild.remove_at(old_idx-1);
             lchild.remove_child_at(old_idx);
             rchild.values.emplace(rchild.values.begin(), std::move(next_right_val));
             rchild.children.emplace(rchild.children.begin(), std::move(next_right_child));

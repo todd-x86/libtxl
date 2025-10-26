@@ -1,3 +1,5 @@
+#include <algorithm>
+#include <random>
 #include <txl/unit_test.h>
 #include <txl/btree.h>
 
@@ -33,7 +35,12 @@ TXL_UNIT_TEST(simple)
             bt.insert(std::move(i), i*10);
             keys.emplace_back(i);
         }
-        std::random_shuffle(keys.begin(), keys.end());
+	std::random_device rd;
+    // std::mt19937 is a Mersenne Twister engine, a good general-purpose URNG
+    std::mt19937 g(rd());
+
+    // Shuffle the vector using std::shuffle and the random engine
+        std::shuffle(keys.begin(), keys.end(), g);
         for (auto k : keys)
         {
             if (k > 57 or k < 53)
