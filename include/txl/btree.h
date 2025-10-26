@@ -35,11 +35,6 @@ namespace txl
             std::vector<node_ptr> children;
             std::vector<kv_pair> values;
 
-            node()
-            {
-                //values.reserve(10);
-            }
-
             auto validate() const -> void
             {
                 size_t num_empty = 0, num_non_empty = 0;
@@ -60,38 +55,11 @@ namespace txl
                 }
             }
 
-            auto print_children() const -> void
-            {
-		std::cout << "{" << std::endl;
-                for (auto const & c : children)
-		{
-			if (c)
-			{
-                    std::cout << " - " << c->values[0].first << ".." << c->values[c->values.size()-1].first << std::endl;
-			}
-			else
-			{
-                    std::cout << " - null" << std::endl;
-			}
-                }
-		std::cout << "}" << std::endl;
-            }
-
             auto num_children() const -> size_t
             {
                 return std::count_if(children.begin(), children.end(), [](auto const & c) { return c != nullptr; });
             }
             
-            auto free_child_index() const -> size_t
-            {
-                auto it = std::find_if(children.begin(), children.end(), [](auto const & c) { return c != nullptr; });
-                if (it == children.end())
-                {
-                    throw std::runtime_error{"no free child"};
-                }
-                return std::distance(children.begin(), it);
-            }
-
             auto child(size_t index) -> node &
             {
                 return *children.at(index);
@@ -142,14 +110,11 @@ namespace txl
 
             auto replace_at(size_t index, kv_pair && value) -> void
             {
-                std::cout << "replace " << values.at(index).first << " with " << value.first << "\n";
                 values.at(index) = std::move(value);
             }
 
             auto get_successor(size_t index) -> kv_pair
             {
-                //auto const & key = values.at(index).first;
-                std::cout << "get_successor()\n";
                 auto const & child = children.at(index);
                 return child->release_max();
             }
@@ -319,7 +284,6 @@ namespace txl
                     }
                     else if (curr.child(res.index).values.size() == 0)
                     {
-                        std::cout << "PROMOTE!\n";
                         curr.children.at(res.index) = std::move(curr.children.at(res.index)->children.at(0));
                         curr.validate();
                         curr.children.at(res.index)->validate();
@@ -363,23 +327,21 @@ namespace txl
             }
             auto & lchild = parent.child(lchild_index);
             auto & rchild = parent.child(lchild_index+1);
-            auto lchild_underflows = (lchild.values.size() < 1);
-            auto rchild_underflows = (rchild.values.size() < 1);
             auto borrow_from_lchild = lchild.values.size() > 1;
             auto borrow_from_rchild = rchild.values.size() > 1;
-            if (lchild_underflows and borrow_from_rchild)
+            if (underflows(lchild) and borrow_from_rchild)
             {
                 // Rotate left
                 rotate_left(parent, lchild_index, lchild, rchild);
                 return true;
             }
-            if (rchild_underflows and borrow_from_lchild)
+            if (underflows(rchild) and borrow_from_lchild)
             {
                 // Rotate right
                 rotate_right(parent, lchild_index, lchild, rchild);
                 return true;
             }
-            if (lchild_underflows or rchild_underflows)
+            if (underflows(lchild) or underflows(rchild))
             {
                 // Merge
                 merge(parent, lchild_index, lchild, rchild);
@@ -397,8 +359,6 @@ namespace txl
                  ()    (B,C)    (A)  (C)
 
             */
-            std::cout << "ROTATE LEFT BEFORE (" << lchild.values.size() << " vs " << rchild.values.size() << ")\n";
-            print(parent, "- ");
             auto next_left_val = std::move(parent.values.at(parent_value_index));
             parent.remove_at(parent_value_index);
 
@@ -411,8 +371,6 @@ namespace txl
             lchild.values.emplace_back(std::move(next_left_val));
             lchild.children.emplace_back(std::move(next_left_child));
 
-            std::cout << "ROTATE LEFT AFTER\n";
-            print(parent, "+ ");
 
             lchild.validate();
             rchild.validate();
@@ -426,8 +384,6 @@ namespace txl
                    /  \    ->     / \
                 (A,B)  ()       (A)  (C)
             */
-            std::cout << "ROTATE RIGHT BEFORE\n";
-            print(parent, "- ");
             auto next_right_val = std::move(parent.values.at(parent_value_index));
             parent.remove_at(parent_value_index);
 
@@ -441,9 +397,6 @@ namespace txl
             rchild.values.emplace(rchild.values.begin(), std::move(next_right_val));
             rchild.children.emplace(rchild.children.begin(), std::move(next_right_child));
             
-            std::cout << "ROTATE RIGHT AFTER\n";
-            print(parent, "+ ");
-            
             lchild.validate();
             rchild.validate();
             parent.validate();
@@ -456,7 +409,6 @@ namespace txl
                    /  \    ->    |
                  ()    (B)     (A,B)
             */
-            std::cout << "MERGE\n";
             auto new_index = lchild.insert_into(std::move(parent.values.at(parent_value_index == parent.values.size() ? parent_value_index-1 : parent_value_index)));
 	    lchild.remove_child_at(new_index);
 	    // TODO: why off by 1?
@@ -482,7 +434,6 @@ namespace txl
             parent.remove_child_at(parent_value_index + 1);
             
             lchild.validate();
-            //rchild.validate();
             parent.validate();
         }
 
@@ -503,9 +454,8 @@ namespace txl
 
         auto remove(Key const & key) -> void
         {
-            std::cout << "REMOVE(" << key << ")\n";
             remove_from(*root_, key);
-            // TODO: check for 1 child, move up
+            // check for 1 child, move up
             if (root_->children.size() == 1)
             {
                 root_ = std::move(root_->children.at(0));
@@ -513,6 +463,21 @@ namespace txl
         }
 
         auto insert(Key && key, Value && value) -> void
+        {
+            if (root_ == nullptr)
+            {
+                root_ = std::make_unique<node>();
+            }
+            auto data = std::make_pair(std::move(key), std::move(value));
+            if (not insert_into_leaf(*root_, data))
+            {
+                auto new_root = std::make_unique<node>();
+                root_->split_into(*new_root);
+                root_ = std::move(new_root);
+            }
+        }
+        
+        auto insert(Key const & key, Value && value) -> void
         {
             if (root_ == nullptr)
             {
