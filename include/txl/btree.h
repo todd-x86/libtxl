@@ -411,8 +411,7 @@ namespace txl
             */
             auto new_index = lchild.insert_into(std::move(parent.values.at(parent_value_index == parent.values.size() ? parent_value_index-1 : parent_value_index)));
 	    lchild.remove_child_at(new_index);
-	    // TODO: why off by 1?
-	    lchild.children.emplace(lchild.children.begin() + new_index + 1, nullptr);
+	    lchild.children.emplace_back(nullptr);
             parent.remove_at(parent_value_index);
 
             auto rchildren = rchild.num_children();
