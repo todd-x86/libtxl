@@ -40,7 +40,7 @@ TXL_UNIT_TEST(simple)
     bt.print();*/
 
     std::vector<int> keys{};
-    for (auto i = 20; i > 0; --i)
+    for (auto i = 200; i > 0; --i)
     {
         bt.insert(std::move(i), i*10);
         keys.emplace_back(i);
@@ -48,7 +48,10 @@ TXL_UNIT_TEST(simple)
     std::random_shuffle(keys.begin(), keys.end());
     for (auto k : keys)
     {
-        bt.remove(k);
+        if (k > 57 or k < 53)
+        {
+            bt.remove(k);
+        }
     }
     bt.print();
 

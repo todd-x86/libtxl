@@ -397,20 +397,19 @@ namespace txl
                  ()    (B,C)    (A)  (C)
 
             */
-            std::cout << "ROTATE LEFT BEFORE\n";
+            std::cout << "ROTATE LEFT BEFORE (" << lchild.values.size() << " vs " << rchild.values.size() << ")\n";
             print(parent, "- ");
-            auto next_left_val = std::move(parent.values.front());
-            parent.remove_at(0);
+            auto next_left_val = std::move(parent.values.at(parent_value_index));
+            parent.remove_at(parent_value_index);
 
             auto next_parent_val = std::move(rchild.values.front());
-            parent.values.emplace_back(next_parent_val);
+            parent.values.emplace(parent.values.begin() + parent_value_index, next_parent_val);
 
             auto next_left_child = std::move(rchild.children.front());
             rchild.remove_at(0);
             rchild.remove_child_at(0);
             lchild.values.emplace_back(std::move(next_left_val));
             lchild.children.emplace_back(std::move(next_left_child));
-            
 
             std::cout << "ROTATE LEFT AFTER\n";
             print(parent, "+ ");
@@ -429,14 +428,14 @@ namespace txl
             */
             std::cout << "ROTATE RIGHT BEFORE\n";
             print(parent, "- ");
-            auto next_right_val = std::move(parent.values.back());
-            parent.remove_at(parent.values.size()-1);
+            auto next_right_val = std::move(parent.values.at(parent_value_index));
+            parent.remove_at(parent_value_index);
 
             auto next_parent_val = std::move(lchild.values.back());
-            parent.values.emplace(parent.values.begin(), next_parent_val);
+            parent.values.emplace(parent.values.begin() + parent_value_index, next_parent_val);
 
             auto next_right_child = std::move(lchild.children.back());
-            auto old_idx = lchild.values.size()-1;
+            auto old_idx = lchild.values.size();
             lchild.remove_at(old_idx);
             lchild.remove_child_at(old_idx);
             rchild.values.emplace(rchild.values.begin(), std::move(next_right_val));
