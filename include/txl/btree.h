@@ -55,11 +55,6 @@ namespace txl
                 }
             }
 
-            auto num_children() const -> size_t
-            {
-                return std::count_if(children.begin(), children.end(), [](auto const & c) { return c != nullptr; });
-            }
-            
             auto child(size_t index) -> node &
             {
                 return *children.at(index);
@@ -70,32 +65,22 @@ namespace txl
                 children.at(index) = std::move(n);
             }
 
-            auto release_max() -> kv_pair
-            {
-                auto n = this;
-                while (not n->is_leaf())
-                {
-                    n = n->children.back().get();
-                }
-                auto last = std::move(n->values.back());
-                n->remove_child_at(n->values.size());
-                n->values.erase(n->values.begin() + n->values.size()-1);
-                return last;
-            }
-
             auto remove_at(size_t index) -> void
             {
+                if (index >= values.size())
+                {
+                    throw std::runtime_error{"wrong index"};
+                }
                 values.erase(values.begin() + index);
             }
 
             auto remove_child_at(size_t index) -> void
             {
+                if (index >= children.size())
+                {
+                    throw std::runtime_error{"wrong index"};
+                }
                 children.erase(children.begin() + index);
-            }
-
-            auto num_values() const -> size_t
-            {
-                return values.size();
             }
 
             auto set_child(size_t index, node_ptr & child) -> void
@@ -111,12 +96,6 @@ namespace txl
             auto replace_at(size_t index, kv_pair && value) -> void
             {
                 values.at(index) = std::move(value);
-            }
-
-            auto get_successor(size_t index) -> kv_pair
-            {
-                auto const & child = children.at(index);
-                return child->release_max();
             }
 
             auto split_into(node & parent) -> void
@@ -147,16 +126,7 @@ namespace txl
                     }
                     return children.back().get();
                 }
-                if (it->first == key)
-                {
-                    return this;
-                }
-                auto index = std::distance(values.begin(), it);
-                if (it->first < key)
-                {
-                    return children.at(index+1).get();
-                }
-                return children.at(index).get();
+                return children.at(std::distance(values.begin(), it)).get();
             }
 
             auto index_of(Key const & key) -> find_result
@@ -253,14 +223,14 @@ namespace txl
                 if (not insert_into_leaf(*next, data))
                 {
                     next->split_into(curr);
-                    return curr.num_values() < degree_;
+                    return curr.values.size() < degree_;
                 }
                 return true;
             }
             
             curr.insert_into(std::move(data));
 
-            return curr.num_values() < degree_;
+            return curr.values.size() < degree_;
         }
 
         auto remove_from(node & curr, Key const & key) -> remove_result
@@ -409,23 +379,15 @@ namespace txl
                    /  \    ->    |
                  ()    (B)     (A,B)
             */
-            auto new_index = lchild.insert_into(std::move(parent.values.at(parent_value_index == parent.values.size() ? parent_value_index-1 : parent_value_index)));
-	    lchild.remove_child_at(new_index);
-	    lchild.children.emplace_back(nullptr);
+            auto new_index = lchild.insert_into(std::move(parent.values.at(parent_value_index)));
+            // Remove empty child created by insert_into() -- new children added at the end
+            lchild.remove_child_at(new_index);
+
             parent.remove_at(parent_value_index);
 
-            auto rchildren = rchild.num_children();
-            for (size_t i = 0; i < rchildren; ++i)
+            for (auto & child : rchild.children)
             {
-                auto insert_index = lchild.num_children();
-		if (insert_index < lchild.children.size())
-		{
-			lchild.children.at(lchild.num_children()) = std::move(rchild.children.at(i));
-		}
-		else
-		{
-			lchild.children.emplace_back(std::move(rchild.children.at(i)));
-		}
+                lchild.children.emplace_back(std::move(child));
             }
             std::move(rchild.values.begin(), rchild.values.end(), std::back_inserter(lchild.values));
             rchild.values.clear();
@@ -435,7 +397,6 @@ namespace txl
             lchild.validate();
             parent.validate();
         }
-
 
         auto underflows(node const & curr) const -> bool
         {
@@ -461,14 +422,13 @@ namespace txl
             }
         }
 
-        auto insert(Key && key, Value && value) -> void
+        auto insert(kv_pair && value) -> void
         {
             if (root_ == nullptr)
             {
                 root_ = std::make_unique<node>();
             }
-            auto data = std::make_pair(std::move(key), std::move(value));
-            if (not insert_into_leaf(*root_, data))
+            if (not insert_into_leaf(*root_, value))
             {
                 auto new_root = std::make_unique<node>();
                 root_->split_into(*new_root);

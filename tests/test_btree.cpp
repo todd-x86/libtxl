@@ -18,6 +18,8 @@ TXL_UNIT_TEST(simple)
         bt.insert("Len Brennan", 7);
         bt.insert("Dick Byrne", 8);
         bt.insert("Cyril MacDuff", 9);
+        bt.insert("Ted Crilly", 2);
+        bt.insert("Ted Crilly", 3);
 
         bt.print();
         bt.remove("Mrs. Doyle");
@@ -30,9 +32,9 @@ TXL_UNIT_TEST(simple)
         txl::btree<int, int> bt{3};
         
         std::vector<int> keys{};
-        for (auto i = 1000; i > 0; --i)
+        for (auto i = 5000; i > 0; --i)
         {
-            bt.insert(std::move(i), i*10);
+            bt.insert(5000-i+1, i*10);
             keys.emplace_back(i);
         }
 	std::random_device rd;
@@ -43,7 +45,7 @@ TXL_UNIT_TEST(simple)
         std::shuffle(keys.begin(), keys.end(), g);
         for (auto k : keys)
         {
-            if (k > 57 or k < 53)
+            if (k > 257 or k < 253)
             {
                 bt.remove(k);
             }
