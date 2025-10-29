@@ -21,20 +21,49 @@ namespace txl
         using std::runtime_error::runtime_error;
     };
 
+    namespace detail
+    {
+        template<class Value>
+        struct result_value_wrapper final
+        {
+            Value const & value;
+            
+            result_value_wrapper(Value const & value)
+                : value(value)
+            {
+            }
+        };
+
+        template<class Error>
+        struct result_error_wrapper final
+        {
+            Error const & error;
+            
+            result_error_wrapper(Error const & error)
+                : error(error)
+            {
+            }
+        };
+    }
+
+    template<class Value>
+    inline auto as_result(Value const & val) -> detail::result_value_wrapper<Value>
+    {
+        return {val};
+    }
+    
+    template<class Error>
+    inline auto as_error(Error const & err) -> detail::result_error_wrapper<Error>
+    {
+        return {err};
+    }
+
     template<class Value, class ErrorContext = system_error_context>
     class result final
     {
     private:
         using error_type = typename ErrorContext::error_type;
-
-        struct is_value_t final
-        {
-        };
-
-        struct is_error_t final
-        {
-        };
-
+        
         enum flags : uint8_t
         {
             ASSIGNED = 1 << 0,
@@ -74,6 +103,20 @@ namespace txl
         using error_context_type = ErrorContext;
 
         result()
+        {
+        }
+
+        template<class V>
+        result(detail::result_value_wrapper<V> && val)
+            : value_(std::move(const_cast<V &>(val.value)))
+            , flags_(ASSIGNED)
+        {
+        }
+
+        template<class E>
+        result(detail::result_error_wrapper<E> && error)
+            : error_(error.error)
+            , flags_(ASSIGNED | IS_ERROR)
         {
         }
 

@@ -21,6 +21,9 @@ TXL_UNIT_TEST(simple)
         bt.insert("Ted Crilly", 2);
         bt.insert("Ted Crilly", 3);
 
+        assert_equal(*bt.find("Len Brennan"), 7);
+        assert_equal(bt.find("Tom"), nullptr);
+
         bt.print();
         bt.remove("Mrs. Doyle");
         bt.print();

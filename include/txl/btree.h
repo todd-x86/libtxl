@@ -1,9 +1,8 @@
 #pragma once
 
-#include <txl/storage.h>
-
 #include <memory>
 #include <optional>
+#include <stdexcept>
 #include <vector>
 
 namespace txl
@@ -18,7 +17,7 @@ namespace txl
 
         using node_ptr = std::unique_ptr<node>;
 
-        struct find_result final
+        struct index_of_result final
         {
             size_t index;
             bool found;
@@ -34,6 +33,20 @@ namespace txl
         {
             std::vector<node_ptr> children;
             std::vector<kv_pair> values;
+        
+            auto find(Key const & key) const -> Value const *
+            {
+                auto res = index_of(key);
+                if (res.found)
+                {
+                    return &values.at(res.index).second;
+                }
+                if (is_leaf())
+                {
+                    return nullptr;
+                }
+                return children.at(res.index)->find(key);
+            }
 
             auto validate() const -> void
             {
@@ -129,7 +142,7 @@ namespace txl
                 return children.at(std::distance(values.begin(), it)).get();
             }
 
-            auto index_of(Key const & key) -> find_result
+            auto index_of(Key const & key) const -> index_of_result
             {
                 auto it = std::lower_bound(values.begin(), values.end(), key, [](auto const & v, auto const & key) { return v.first < key; });
                 auto index = std::distance(values.begin(), it);
@@ -175,7 +188,7 @@ namespace txl
             }
         };
             
-        auto find(node * curr, Key const & key) -> find_result
+        auto find(node * curr, Key const & key) -> index_of_result
         {
             while (curr)
             {
@@ -412,8 +425,22 @@ namespace txl
         {
         }
 
+        auto find(Key const & key) const -> Value const *
+        {
+            if (root_)
+            {
+                return root_->find(key);
+            }
+            return nullptr;
+        }
+
         auto remove(Key const & key) -> void
         {
+            if (root_ == nullptr)
+            {
+                return;
+            }
+
             remove_from(*root_, key);
             // check for 1 child, move up
             if (root_->children.size() == 1)
