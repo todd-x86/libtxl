@@ -80,7 +80,21 @@ namespace txl
         auto move_from(result && v) -> void
         {
             auto has_previous_value = flags_ & ASSIGNED;
+            auto prev_error = flags_ & IS_ERROR;
+
             std::swap(flags_, v.flags_);
+            
+            if (has_previous_value)
+            {
+                if (prev_error)
+                {
+                    error_.~error_type();
+                }
+                else
+                {
+                    value_.~Value();
+                }
+            }
 
             if (flags_ & ASSIGNED)
             {
@@ -90,10 +104,6 @@ namespace txl
                 }
                 else
                 {
-                    if (has_previous_value)
-                    {
-                        value_.~Value();
-                    }
                     new(&value_) Value(std::move(v.value_));
                 }
             }
