@@ -68,11 +68,6 @@ namespace txl
                 }
             }
 
-            auto child(size_t index) -> node &
-            {
-                return *children.at(index);
-            }
-            
             auto replace_at(size_t index, node && n) -> void
             {
                 children.at(index) = std::move(n);
@@ -130,33 +125,17 @@ namespace txl
 
             auto find_child(Key const & key) -> node *
             {
-                auto it = std::lower_bound(values.begin(), values.end(), key, [](auto const & v, auto const & key) { return v.first < key; });
-                if (it == values.end())
-                {
-                    if (children.size() == 0)
-                    {
-                        return nullptr;
-                    }
-                    return children.back().get();
-                }
-                return children.at(std::distance(values.begin(), it)).get();
+                auto res = index_of(key);
+                return children.at(res.index).get();
             }
 
             auto index_of(Key const & key) const -> index_of_result
             {
                 auto it = std::lower_bound(values.begin(), values.end(), key, [](auto const & v, auto const & key) { return v.first < key; });
                 auto index = std::distance(values.begin(), it);
-                if (it == values.end() or it->first < key)
-                {
-                    return {static_cast<size_t>(index), false};
-                }
-                else if (it->first == key)
+                if (it != values.end() and it->first == key)
                 {
                     return {static_cast<size_t>(index), true};
-                }
-                else if (it->first > key)
-                {
-                    return {static_cast<size_t>(index), false};
                 }
                 return {static_cast<size_t>(index), false};
             }
@@ -173,7 +152,7 @@ namespace txl
 
             auto is_leaf() const -> bool
             {
-                return std::find_if(children.begin(), children.end(), [](auto const & node) { return node != nullptr; }) == children.end();
+                return children.empty() or children.front() == nullptr;
             }
 
             auto insert_into(kv_pair && data) -> size_t
@@ -258,14 +237,14 @@ namespace txl
                 }
             
                 // Find the next level
-                auto child_res = remove_from(curr.child(res.index), key);
+                auto child_res = remove_from(*curr.children.at(res.index), key);
                 if (child_res.rebalance)
                 {
                     if (curr.values.size() != 0)
                     {
                         rebalance(curr, res.index);
                     }
-                    else if (curr.child(res.index).values.size() == 0)
+                    else if (curr.children.at(res.index)->values.size() == 0)
                     {
                         curr.children.at(res.index) = std::move(curr.children.at(res.index)->children.at(0));
                         curr.validate();
@@ -281,7 +260,7 @@ namespace txl
                 return {true, true};
             }
               
-            curr.replace_at(res.index, steal_max(curr.child(res.index)));
+            curr.replace_at(res.index, steal_max(*curr.children.at(res.index)));
             rebalance(curr, res.index);
             return {true, true};
         }
@@ -295,7 +274,7 @@ namespace txl
                 return res;
             }
 
-            auto res = steal_max(n.child(n.children.size()-1));
+            auto res = steal_max(*n.children.at(n.children.size()-1));
             rebalance(n, n.values.size()-1);
             return res;
         }
@@ -308,8 +287,8 @@ namespace txl
             {
                 lchild_index--;
             }
-            auto & lchild = parent.child(lchild_index);
-            auto & rchild = parent.child(lchild_index+1);
+            auto & lchild = *parent.children.at(lchild_index);
+            auto & rchild = *parent.children.at(lchild_index+1);
             auto borrow_from_lchild = lchild.values.size() > 1;
             auto borrow_from_rchild = rchild.values.size() > 1;
             if (underflows(lchild) and borrow_from_rchild)
