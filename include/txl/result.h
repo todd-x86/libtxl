@@ -100,7 +100,7 @@ namespace txl
             {
                 if (flags_ & IS_ERROR)
                 {
-                    error_ = std::move(v.error_);
+                    new(&error_) error_type(std::move(v.error_));
                 }
                 else
                 {
