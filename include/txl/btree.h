@@ -48,31 +48,6 @@ namespace txl
                 return children.at(res.index)->find(key);
             }
 
-            auto validate() const -> void
-            {
-                size_t num_empty = 0, num_non_empty = 0;
-                for (auto const & c : children)
-                {
-                    if (c == nullptr)
-                    {
-                        num_empty++;
-                    }
-                    else
-                    {
-                        num_non_empty++;
-                    }
-                }
-                if (num_empty != 0 and num_non_empty != 0)
-                {
-                    throw std::runtime_error{"some empty child nodes with non-empty child nodes"};
-                }
-            }
-
-            auto replace_at(size_t index, node && n) -> void
-            {
-                children.at(index) = std::move(n);
-            }
-
             auto remove_at(size_t index) -> void
             {
                 if (index >= values.size())
@@ -140,16 +115,6 @@ namespace txl
                 return {static_cast<size_t>(index), false};
             }
 
-            auto left_child(size_t index) -> node &
-            {
-                return *children.at(index);
-            }
-
-            auto right_child(size_t index) -> node &
-            {
-                return *children.at(index+1);
-            }
-
             auto is_leaf() const -> bool
             {
                 return children.empty() or children.front() == nullptr;
@@ -157,13 +122,10 @@ namespace txl
 
             auto insert_into(kv_pair && data) -> size_t
             {
-                auto it = std::lower_bound(values.begin(), values.end(), data, [](auto const & x, auto const & y) {
-                    return x.first < y.first;
-                });
-                auto index = std::distance(values.begin(), it);
-                values.emplace(it, std::move(data));
-                children.emplace(std::next(children.begin(), index), nullptr);
-                return index;
+                auto res = index_of(data.first);
+                values.emplace(std::next(values.begin(), res.index), std::move(data));
+                children.emplace(std::next(children.begin(), res.index), nullptr);
+                return res.index;
             }
         };
             
@@ -247,8 +209,6 @@ namespace txl
                     else if (curr.children.at(res.index)->values.size() == 0)
                     {
                         curr.children.at(res.index) = std::move(curr.children.at(res.index)->children.at(0));
-                        curr.validate();
-                        curr.children.at(res.index)->validate();
                     }
                 }
                 return child_res;
@@ -332,11 +292,6 @@ namespace txl
             rchild.remove_child_at(0);
             lchild.values.emplace_back(std::move(next_left_val));
             lchild.children.emplace_back(std::move(next_left_child));
-
-
-            lchild.validate();
-            rchild.validate();
-            parent.validate();
         }
 
         auto rotate_right(node & parent, size_t parent_value_index, node & lchild, node & rchild) -> void
@@ -358,10 +313,6 @@ namespace txl
             lchild.remove_child_at(old_idx);
             rchild.values.emplace(rchild.values.begin(), std::move(next_right_val));
             rchild.children.emplace(rchild.children.begin(), std::move(next_right_child));
-            
-            lchild.validate();
-            rchild.validate();
-            parent.validate();
         }
 
         auto merge(node & parent, size_t parent_value_index, node & lchild, node & rchild) -> void
@@ -385,9 +336,6 @@ namespace txl
             rchild.values.clear();
             
             parent.remove_child_at(parent_value_index + 1);
-            
-            lchild.validate();
-            parent.validate();
         }
 
         auto underflows(node const & curr) const -> bool
@@ -459,9 +407,7 @@ namespace txl
 
         auto print() const -> void
         {
-            std::cout << "v TREE-------------------\n";
             print(*root_, "");
-            std::cout << "^ TREE-------------------\n";
         }
     };
 }
