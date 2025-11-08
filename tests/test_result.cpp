@@ -43,4 +43,10 @@ TXL_UNIT_TEST(same_value_error_types)
     assert_equal(t.or_throw(), "World");
 }
 
+TXL_UNIT_TEST(with_continuation)
+{
+    auto t = as_result().with([](auto res) { return res + " World"; });
+    assert_equal(t.or_throw(), "Hello World");
+}
+
 TXL_RUN_TESTS()

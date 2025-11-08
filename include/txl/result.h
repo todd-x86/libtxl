@@ -267,7 +267,7 @@ namespace txl
             return std::move(value_);
         }
 
-        auto then(std::function<result<Value>()> cont) -> result<Value> &
+        auto then(std::function<result<Value, ErrorContext>()> cont) -> result<Value, ErrorContext> &
         {
             // Only runs if result is NOT an error
             if (is_assigned() and not is_error())
@@ -275,6 +275,16 @@ namespace txl
                 *this = std::move(cont());
             }
             return *this;
+        }
+
+        template<class Func, class ReturnType = typename std::invoke_result_t<Func, Value>>
+        auto with(Func && cont) -> result<ReturnType, ErrorContext>
+        {
+            if (is_assigned() and not is_error())
+            {
+                return as_result(cont(release()));
+            }
+            return as_error(error());
         }
     };
     
