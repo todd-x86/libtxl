@@ -29,7 +29,7 @@ namespace txl
             }
             // TODO: strong exception guarantee here (assign after emplace)
             auto * p = new Container<T>();
-            type_map_.emplace(t, container{p, [](auto * p) { delete static_cast<Container<T> *>(p); });
+            type_map_.emplace(t, container{p, [](auto * p) { delete static_cast<Container<T> *>(p); }});
             return p;
         }
     public:
