@@ -11,7 +11,7 @@
 #define LAZY_EMIT(m) ::txl::messaging::detail::global_dispatcher::instance().lazy_dispatch<decltype(m)>([&]() { return m; })
 #define EMIT(m) ::txl::messaging::detail::global_dispatcher::instance().dispatch(m)
 #define OBSERVE(o, msgs...) ::txl::messaging::detail::global_dispatcher::instance().add<msgs>(o)
-#define REMOVE(o) ::txl::messaging::detail::global_dispatcher::instance().remove(o)
+#define UNOBSERVE(o) ::txl::messaging::detail::global_dispatcher::instance().remove(o)
 
 namespace txl::messaging
 {
@@ -93,6 +93,10 @@ namespace txl::messaging
                 {
                     subs.erase(o_iter);
                 }
+                if (subs.empty())
+                {
+                    sub_map.erase(type_id);
+                }
             }
             observer_to_types_.erase(&o);
         }
@@ -115,7 +119,7 @@ namespace txl::messaging
             auto it = subs->second.begin();
             while (it != subs->second.end())
             {
-                if ((*it)(&msg))
+                if (it->func_(&msg))
                 {
                     ++it;
                 }
