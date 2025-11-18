@@ -35,7 +35,34 @@ struct widget final
 
 TXL_UNIT_TEST(polymorphic_map)
 {
-    txl::polymorphic_map<std::vector> bunch_o_vectors{};
+    txl::polymorphic_map map{};
+    auto & w = map.get<widget>(1,1,2,3);
+    assert_equal(w.x, 1);
+    assert_equal(w.y, 1);
+    assert_equal(w.width, 2);
+    assert_equal(w.height, 3);
+    map.get<std::string>() = "Hello world";
+    assert_equal(map.get<std::string>(), "Hello world");
+    
+    map.get<int>(100);
+    assert_equal(map.get<int>(), 100);
+
+    assert_equal(map.size(), 3);
+
+    assert_true(map.contains(txl::get_type_info<int>()));
+    assert_true(map.contains(txl::get_type_info<std::string>()));
+    assert_true(map.contains(txl::get_type_info<widget>()));
+    assert_false(map.contains(txl::get_type_info<double>()));
+    
+    assert_true(map.contains<int>());
+    assert_true(map.contains<std::string>());
+    assert_true(map.contains<widget>());
+    assert_false(map.contains<double>());
+}
+
+TXL_UNIT_TEST(polymorphic_container_map)
+{
+    txl::polymorphic_container_map<std::vector> bunch_o_vectors{};
 
     {
         auto & string_vec = bunch_o_vectors.get<std::string>();
@@ -60,9 +87,9 @@ TXL_UNIT_TEST(polymorphic_map)
     assert_equal(bunch_o_vectors.get<double>(), std::vector<double>{1.0,1.1,2.3,4.56,7.8});
 }
 
-TXL_UNIT_TEST(polymorphic_map_string_maps)
+TXL_UNIT_TEST(polymorphic_container_map_string_maps)
 {
-    txl::polymorphic_map<string_map> map_to_string{};
+    txl::polymorphic_container_map<string_map> map_to_string{};
     {
         auto & int_to_str = map_to_string.get<int>();
         int_to_str[1] = "One";
@@ -83,11 +110,12 @@ TXL_UNIT_TEST(polymorphic_map_string_maps)
 template<class T>
 using ptr_vector = std::vector<std::unique_ptr<T>>;
 
-TXL_UNIT_TEST(polymorphic_map_cleanup)
+TXL_UNIT_TEST(polymorphic_container_map_cleanup)
 {
+    num_widgets_created = num_widgets_destroyed = 0;
     {
         // using unique_ptr to better track lifetimes
-        txl::polymorphic_map<ptr_vector> map_of_one_thing{};
+        txl::polymorphic_container_map<ptr_vector> map_of_one_thing{};
         assert_equal(num_widgets_created, 0);
         assert_equal(num_widgets_destroyed, 0);
 

@@ -7,20 +7,9 @@
 
 namespace txl
 {
-    /**
-     * Unordered map of a `type_info` to a container of like objects.  This is a "container of containers" where
-     * each key-value pair represents a container for a specific type.  All containers under the `polymorphic_map`
-     * conform to the same type specified (`Container`).
-     *
-     * \tparam Container container type accepting a single type for template instantiation
-     */
-    template<template<class> class Container>
     class polymorphic_map
     {
-    private:
-        /**
-         * Container wrapper which owns the lifetime of the container.
-         */
+    protected:
         class container final
         {
         private:
@@ -51,18 +40,23 @@ namespace txl
 
         std::unordered_map<type_info, container> type_map_;
 
-        template<class T, class... CtorArgs>
-        auto find_or_create(CtorArgs && ... ctor_args) -> void *
+        template<class T>
+        static inline auto get_deleter()
         {
-            auto t = get_type_info<T>();
-            auto it = type_map_.find(t);
+            return [](auto * p) { delete static_cast<T *>(p); };
+        }
+    protected:
+        template<class T, class... CtorArgs>
+        auto find_or_create(type_info const & ti, CtorArgs && ... ctor_args) -> void *
+        {
+            auto it = type_map_.find(ti);
             if (it == type_map_.end())
             {
                 auto emplaced = false;
-                std::tie(it, emplaced) = type_map_.emplace(t, container{[](auto * p) { delete static_cast<Container<T> *>(p); }});
+                std::tie(it, emplaced) = type_map_.emplace(ti, container{get_deleter<T>()});
                 if (emplaced)
                 {
-                    it->second.assign(new Container<T>(std::forward<CtorArgs>(ctor_args)...));
+                    it->second.assign(new T(std::forward<CtorArgs>(ctor_args)...));
                 }
             }
             return it->second.get();
@@ -73,24 +67,54 @@ namespace txl
             type_map_.clear();
         }
 
+        auto contains(type_info const & ti) const -> bool { return type_map_.find(ti) != type_map_.end(); }
+
+        template<class T>
+        auto contains() const -> bool { return contains(get_type_info<T>()); }
+
         auto size() const -> size_t { return type_map_.size(); }
+
+        template<class T, class... CtorArgs>
+        auto get(CtorArgs && ... ctor_args) -> T &
+        {
+            auto * c = find_or_create<T>(get_type_info<T>(), std::forward<CtorArgs>(ctor_args)...);
+            return *static_cast<T *>(c);
+        }
+
+        template<class T>
+        auto get() const -> T const *
+        {
+            if (auto it = type_map_.find(get_type_info<T>()); it != type_map_.end())
+            {
+                return static_cast<T const *>(it->second.get());
+            }
+            return nullptr;
+        }
+    };
+
+    /**
+     * Unordered map of a `type_info` to a container of like objects.  This is a "container of containers" where
+     * each key-value pair represents a container for a specific type.  All containers under the `polymorphic_map`
+     * conform to the same type specified (`Container`).
+     *
+     * \tparam Container container type accepting a single type for template instantiation
+     */
+    template<template<class> class Container>
+    struct polymorphic_container_map : polymorphic_map
+    {
+        template<class T>
+        auto contains() const -> bool { return polymorphic_map::contains(get_type_info<Container<T>>()); }
 
         template<class T, class... CtorArgs>
         auto get(CtorArgs && ... ctor_args) -> Container<T> &
         {
-            auto * c = find_or_create<T>(std::forward<CtorArgs>(ctor_args)...);
-            return *static_cast<Container<T> *>(c);
+            return polymorphic_map::get<Container<T>, CtorArgs...>(std::forward<CtorArgs>(ctor_args)...);
         }
 
         template<class T>
         auto get() const -> Container<T> const *
         {
-            void * c = nullptr;
-            if (auto it = type_map_.find(get_type_info<T>()); it != type_map_.end())
-            {
-                c = it->second.get();
-            }
-            return static_cast<Container<T> const *>(c);
+            return polymorphic_map::get<Container<T>>();
         }
     };
 }
