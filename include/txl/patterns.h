@@ -237,6 +237,25 @@ namespace txl
         }
     }
 
+    template<class Container, class CondFunc>
+    inline auto erase_if(Container & container, CondFunc && cond) -> size_t
+    {
+        size_t num_erased = 0;
+        for (auto it = container.begin(); it != container.end(); )
+        {
+            if (cond(*it))
+            {
+                it = container.erase(it);
+                ++num_erased;
+            }
+            else
+            {
+                ++it;
+            }
+        }
+        return num_erased;
+    }
+
     template<class Container, class Key, class Func>
     inline auto if_found(Container const & container, Key const & key, Func func) -> bool
     {

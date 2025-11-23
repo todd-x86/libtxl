@@ -1,17 +1,22 @@
 #pragma once
 
+#include <txl/patterns.h>
+#include <txl/polymorphic.h>
 #include <txl/type_info.h>
 
+#include <algorithm>
 #include <functional>
+#include <memory>
+#include <set>
 #include <unordered_map>
 #include <vector>
-
-#include <algorithm>
 
 #define LAZY_EMIT(m) ::txl::messaging::detail::global_dispatcher::instance().lazy_dispatch<decltype(m)>([&]() { return m; })
 #define EMIT(m) ::txl::messaging::detail::global_dispatcher::instance().dispatch(m)
 #define OBSERVE(o, msgs...) ::txl::messaging::detail::global_dispatcher::instance().add<msgs>(o)
 #define UNOBSERVE(o) ::txl::messaging::detail::global_dispatcher::instance().remove(o)
+#define CONNECT_OBSERVER(o) ::txl::messaging::detail::global_dispatcher::instance().connect(o)
+#define DISCONNECT_OBSERVER(o) ::txl::messaging::detail::global_dispatcher::instance().disconnect(o)
 
 namespace txl::messaging
 {
@@ -24,7 +29,7 @@ namespace txl::messaging
         }
     };
 
-    struct dispatcher
+    class dispatcher
     {
     private:
         using callback_func = std::function<bool(void const *)>;
@@ -134,16 +139,12 @@ namespace txl::messaging
         auto lazy_dispatch(Func const & msg_func)
         {
             auto subs = sub_map.find(txl::get_type_info<Msg>());
-            if (subs == sub_map.end())
+            if (subs == sub_map.end() or subs->second.empty())
             {
                 return;
             }
 
-            if (subs->second.empty())
-            {
-                return;
-            }
-
+            // Create the message (presumably expensive)
             auto msg = msg_func();
 
             auto it = subs->second.begin();
@@ -166,12 +167,36 @@ namespace txl::messaging
         class global_dispatcher final
         {
         private:
-            dispatcher disp_;
+            template<class T>
+            using dispatcher_set = std::set<std::shared_ptr<T>>;
+
+            ::txl::messaging::dispatcher disp_;
+            ::txl::polymorphic_container_map<dispatcher_set> observers_;
         public:
             static auto instance() -> global_dispatcher &
             {
                 static global_dispatcher g{};
                 return g;
+            }
+
+            template<class Observer>
+            auto connect(std::shared_ptr<Observer> const & o) -> void
+            {
+                observers_.get<Observer>().insert(o);
+            }
+
+            template<class Observer>
+            auto disconnect(std::shared_ptr<Observer> const & o) -> void
+            {
+                if (not observers_.contains<Observer>())
+                {
+                    return;
+                }
+                auto & observer_set = observers_.get<Observer>();
+                if (auto it = observer_set.find(o); it != observer_set.end())
+                {
+                    observer_set.erase(it);
+                }
             }
 
             template<class Msg>
@@ -196,6 +221,18 @@ namespace txl::messaging
             auto remove(Observer & o) -> void
             {
                 disp_.unsubscribe_all(o);
+            }
+            
+            template<class... Msgs, class Observer>
+            auto add(std::shared_ptr<Observer> & o) -> void
+            {
+                add<Msgs...>(*o);
+            }
+
+            template<class Observer>
+            auto remove(std::shared_ptr<Observer> & o) -> void
+            {
+                remove(*o);
             }
         };
     }
