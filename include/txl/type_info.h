@@ -32,6 +32,11 @@ namespace txl
 
         auto str() const -> std::string { return std::string(name_data, name_len); }
 
+        auto operator<(type_info const & ti) const -> bool
+        {
+            return name().compare(ti.name()) < 0;
+        }
+
         auto operator!=(type_info const & ti) const -> bool
         {
             return not (*this == ti);

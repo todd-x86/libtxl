@@ -14,7 +14,8 @@
 #define LAZY_EMIT(m) ::txl::messaging::detail::global_dispatcher::instance().lazy_dispatch<decltype(m)>([&]() { return m; })
 #define EMIT(m) ::txl::messaging::detail::global_dispatcher::instance().dispatch(m)
 #define OBSERVE(o, msgs...) ::txl::messaging::detail::global_dispatcher::instance().add<msgs>(o)
-#define UNOBSERVE(o) ::txl::messaging::detail::global_dispatcher::instance().remove(o)
+#define UNOBSERVE(o, msgs...) ::txl::messaging::detail::global_dispatcher::instance().remove<msgs>(o)
+#define UNOBSERVE_ALL(o) ::txl::messaging::detail::global_dispatcher::instance().remove_all(o)
 #define CONNECT_OBSERVER(o) ::txl::messaging::detail::global_dispatcher::instance().connect(o)
 #define DISCONNECT_OBSERVER(o) ::txl::messaging::detail::global_dispatcher::instance().disconnect(o)
 
@@ -47,21 +48,25 @@ namespace txl::messaging
 
         using callback_list = std::vector<callback>;
         using type_to_callback_list = std::unordered_map<txl::type_info, callback_list>;
-        using type_info_vector = std::vector<txl::type_info>;
-        using observer_type_map = std::unordered_map<void const *, type_info_vector>;
-        type_to_callback_list sub_map{};
+        using type_info_set = std::set<txl::type_info>;
+        using observer_type_map = std::unordered_map<void const *, type_info_set>;
+        type_to_callback_list sub_map_{};
         observer_type_map observer_to_types_{};
 
         template<class Msg, class Observer>
         auto subscribe_one(Observer & o) -> void
         {
+            auto inserted = false;
             auto & type_list = observer_to_types_[&o];
-            if (std::find(type_list.begin(), type_list.end(), txl::get_type_info<Msg>()) == type_list.end())
+            std::tie(std::ignore, inserted) = type_list.insert(txl::get_type_info<Msg>());
+
+            if (not inserted)
             {
-                type_list.emplace_back(txl::get_type_info<Msg>());
+                // Already subscribed
+                return;
             }
 
-            auto & subs = sub_map[txl::get_type_info<Msg>()];
+            auto & subs = sub_map_[txl::get_type_info<Msg>()];
             subs.emplace_back(static_cast<void const *>(&o), [o_ptr=&o](auto * msg_ptr) {
                 return o_ptr->on_message(*static_cast<Msg const *>(msg_ptr));
             });
@@ -79,7 +84,64 @@ namespace txl::messaging
             subscribe_one<Msg>(o);
             subscribe_all<Msgs...>(o);
         }
+
+        template<class Msg, class Observer>
+        auto unsubscribe_one(Observer & o) -> void
+        {
+            auto observer_it = observer_to_types_.find(&o);
+            if (observer_it == observer_to_types_.end())
+            {
+                return;
+            }
+
+            auto & type_id_set = *observer_it->second;
+            if (auto it = type_id_set.find(txl::get_type_info<Msg>()); it != type_id_set.end())
+            {
+                // Remove from subscription map
+                auto & subs = sub_map_[*it];
+                auto o_iter = std::find_if(subs.begin(), subs.end(), [&o](auto const & to_remove) {
+                    return &o == to_remove.observer_;
+                });
+                if (o_iter != subs.end())
+                {
+                    subs.erase(o_iter);
+                }
+                if (subs.empty())
+                {
+                    // Remove if no subscriptions to this type
+                    sub_map_.erase(*it);
+                }
+
+                // Erase from observer map
+                type_id_set.erase(it);
+            }
+
+            if (type_id_set.empty())
+            {
+                // Erase if observer is not subscribed to anything
+                observer_to_types_.erase(observer_it);
+            }
+        }
+        
+        template<class Observer>
+        auto unsubscribe_from(Observer & o) -> void
+        {
+            // Empty
+        }
+        
+        template<class Msg, class... Msgs, class Observer>
+        auto unsubscribe_from(Observer & o) -> void
+        {
+            unsubscribe_one<Msg>(o);
+            unsubscribe_from<Msgs...>(o);
+        }
     public:
+        template<class... Msgs, class Observer>
+        auto unsubscribe(Observer & o) -> void
+        {
+            unsubscribe_from<Msgs...>(o);
+        }
+        
         template<class Observer>
         auto unsubscribe_all(Observer & o) -> void
         {
@@ -90,7 +152,7 @@ namespace txl::messaging
             }
             for (auto type_id : it->second)
             {
-                auto & subs = sub_map[type_id];
+                auto & subs = sub_map_[type_id];
                 auto o_iter = std::find_if(subs.begin(), subs.end(), [&o](auto const & to_remove) {
                     return &o == to_remove.observer_;
                 });
@@ -100,10 +162,10 @@ namespace txl::messaging
                 }
                 if (subs.empty())
                 {
-                    sub_map.erase(type_id);
+                    sub_map_.erase(type_id);
                 }
             }
-            observer_to_types_.erase(&o);
+            observer_to_types_.erase(it);
         }
 
         template<class... Msgs, class Observer>
@@ -115,8 +177,8 @@ namespace txl::messaging
         template<class Msg>
         auto dispatch(Msg const & msg)
         {
-            auto subs = sub_map.find(txl::get_type_info<Msg>());
-            if (subs == sub_map.end())
+            auto subs = sub_map_.find(txl::get_type_info<Msg>());
+            if (subs == sub_map_.end())
             {
                 return;
             }
@@ -138,8 +200,8 @@ namespace txl::messaging
         template<class Msg, class Func>
         auto lazy_dispatch(Func const & msg_func)
         {
-            auto subs = sub_map.find(txl::get_type_info<Msg>());
-            if (subs == sub_map.end() or subs->second.empty())
+            auto subs = sub_map_.find(txl::get_type_info<Msg>());
+            if (subs == sub_map_.end() or subs->second.empty())
             {
                 return;
             }
@@ -175,7 +237,7 @@ namespace txl::messaging
         public:
             static auto instance() -> global_dispatcher &
             {
-                static global_dispatcher g{};
+                static thread_local global_dispatcher g{};
                 return g;
             }
 
@@ -216,9 +278,15 @@ namespace txl::messaging
             {
                 disp_.subscribe<Msgs...>(o);
             }
+            
+            template<class... Msgs, class Observer>
+            auto remove(Observer & o) -> void
+            {
+                disp_.unsubscribe<Msgs...>(o);
+            }
 
             template<class Observer>
-            auto remove(Observer & o) -> void
+            auto remove_all(Observer & o) -> void
             {
                 disp_.unsubscribe_all(o);
             }
@@ -226,13 +294,21 @@ namespace txl::messaging
             template<class... Msgs, class Observer>
             auto add(std::shared_ptr<Observer> & o) -> void
             {
+                connect(o);
                 add<Msgs...>(*o);
+            }
+            
+            template<class... Msgs, class Observer>
+            auto remove(std::shared_ptr<Observer> const & o) -> void
+            {
+                remove<Msgs...>(*o);
             }
 
             template<class Observer>
-            auto remove(std::shared_ptr<Observer> & o) -> void
+            auto remove_all(std::shared_ptr<Observer> & o) -> void
             {
-                remove(*o);
+                remove_all(*o);
+                disconnect(o);
             }
         };
     }

@@ -73,7 +73,7 @@ TXL_UNIT_TEST(emit_and_observe)
     EMIT((msgs::memory_usage{1,10}));
     EMIT((msgs::memory_usage{1,10}));
     EMIT((msgs::memory_usage{1,10}));
-    UNOBSERVE(ob);
+    UNOBSERVE_ALL(ob);
 
     assert_equal(ob.num_bytes_used(), 3);
 }
@@ -84,7 +84,7 @@ TXL_UNIT_TEST(observe_and_unobserve)
     OBSERVE(ob, msgs::memory_usage);
     EMIT((msgs::memory_usage{1,20}));
     EMIT((msgs::memory_usage{1,20}));
-    UNOBSERVE(ob);
+    UNOBSERVE_ALL(ob);
     EMIT((msgs::memory_usage{1,20}));
 
     assert_equal(ob.num_bytes_used(), 2);
@@ -98,8 +98,8 @@ TXL_UNIT_TEST(observe_specific)
     EMIT((msgs::memory_usage{1,20}));
     EMIT(msgs::expensive_message{});
     EMIT(msgs::debug_line{"Not the comfy chair!"});
-    UNOBSERVE(ob1);
-    UNOBSERVE(ob2);
+    UNOBSERVE_ALL(ob1);
+    UNOBSERVE_ALL(ob2);
 
     assert_equal(ob1.memory_usage.size(), 1);
     assert_equal(ob1.debug_line.size(), 1);
@@ -119,7 +119,7 @@ TXL_UNIT_TEST(lazy_emit)
 
     assert_equal(num_expensive_messages_created, 1);
     assert_equal(ob.expensive_message.size(), num_expensive_messages_created);
-    UNOBSERVE(ob);
+    UNOBSERVE_ALL(ob);
     
     LAZY_EMIT(msgs::expensive_message{});
 
@@ -130,7 +130,6 @@ TXL_UNIT_TEST(lazy_emit)
 TXL_UNIT_TEST(new_observer)
 {
     auto ob = std::make_shared<test_observer>();
-    CONNECT_OBSERVER(ob);
     OBSERVE(ob, msgs::expensive_message);
 
     num_expensive_messages_created = 0;
@@ -138,13 +137,30 @@ TXL_UNIT_TEST(new_observer)
 
     assert_equal(num_expensive_messages_created, 1);
     assert_equal(ob->expensive_message.size(), num_expensive_messages_created);
-    DISCONNECT_OBSERVER(ob);
-    UNOBSERVE(ob);
+    UNOBSERVE_ALL(ob);
     
     LAZY_EMIT(msgs::expensive_message{});
 
     assert_equal(num_expensive_messages_created, 1);
     assert_equal(ob->expensive_message.size(), num_expensive_messages_created);
+}
+
+TXL_UNIT_TEST(observe_many)
+{
+    test_observer ob{};
+    // Subscribe to debug_line twice but this should only be one true sub
+    OBSERVE(ob, msgs::memory_usage, msgs::debug_line);
+    OBSERVE(ob, msgs::expensive_message, msgs::debug_line);
+
+    LAZY_EMIT(msgs::expensive_message{});
+    LAZY_EMIT((msgs::memory_usage{1,20}));
+    LAZY_EMIT((msgs::memory_usage{1,20}));
+    LAZY_EMIT(msgs::debug_line{"Poke her with the soft cushions!"});
+
+    assert_equal(ob.num_bytes_used(), 2);
+    assert_equal(ob.memory_usage.size(), 2);
+    assert_equal(ob.expensive_message.size(), 1);
+    assert_equal(ob.debug_line.size(), 1);
 }
 
 TXL_RUN_TESTS()

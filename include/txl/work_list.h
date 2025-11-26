@@ -1,18 +1,36 @@
+#pragma once
+
+#include <deque>
 #include <optional>
 #include <memory>
-#include <deque>
 #include <vector>
 
 namespace txl
 {
+    struct work_unit;
+
+    using work_unit_ptr = std::unique_ptr<work_unit>;
+
     struct work_status final
     {
+        // Populated when something like a worker runs a work_unit
+        work_unit_ptr unit = nullptr;
+        std::exception_ptr exception = nullptr;
         bool executed = false;
         bool success = true;
         bool complete = true;
 
-        work_status(bool executed, bool success, bool complete)
-            : executed{executed}
+        work_status(work_unit_ptr && unit, bool executed, bool success, bool complete)
+            : unit{std::move(unit)}
+            , executed{executed}
+            , success{success}
+            , complete{complete}
+        {}
+        
+        work_status(work_unit_ptr && unit, std::exception_ptr && eptr, bool executed, bool success, bool complete)
+            : unit{std::move(unit)}
+            , exception{std::move(eptr)}
+            , executed{executed}
             , success{success}
             , complete{complete}
         {}
@@ -23,8 +41,6 @@ namespace txl
         virtual ~work_unit() = default;
         virtual auto execute() -> work_status = 0;
     };
-
-    using work_unit_ptr = std::unique_ptr<work_unit>;
 
     struct worker : work_unit
     {
@@ -55,21 +71,22 @@ namespace txl
                 }
                 catch (...)
                 {
+                    auto exc = std::current_exception();
                     auto retry = retries_ > 0;
                     if (retry)
                     {
                         --retries_;
                     }
-                    return {true, false, not retry};    
+                    return {{}, std::move(exc), true, false, not retry};
                 }
-                return {true, true, true};
+                return {{}, true, true, true};
             }
         };
 
         template<class Func>
         inline auto lambda(Func && func, size_t retries)
         {
-            return std::make_unique<lambda_work_unit<decltype(func)>>(std::move(func), retries);
+            return std::make_unique<lambda_work_unit<Func>>(std::move(func), retries);
         }
     }
 
@@ -131,8 +148,9 @@ namespace txl
             auto work = work_.pop_front();
             if (not work.has_value())
             {
-                return {false, true, true};
+                return {{}, false, true, true};
             }
+            work_unit_ptr completed{};
             auto status = (*work)->execute();
             if (not status.complete)
             {
@@ -145,7 +163,11 @@ namespace txl
                     work_.push_front(std::move(*work));
                 }
             }
-            return {status.executed, status.success, work_.empty()};
+            else
+            {
+                completed = std::move(*work);
+            }
+            return {std::move(completed), std::move(status.exception), status.executed, status.success, work_.empty()};
         }
     };
 
@@ -168,12 +190,13 @@ namespace txl
         {
             if (curr_ == nullptr)
             {
-                return work_status(false, true, true);
+                return work_status({}, false, true, true);
             }
             auto status = curr_->execute();
             if (status.complete)
             {
                 curr_ = nullptr;
+                return {std::move(curr_), std::move(status.exception), status.executed, status.success, status.complete};
             }
 
             return status;
@@ -210,7 +233,7 @@ namespace txl
         size_t num_busy_ = 0;
     public:
         template<class Worker, class... Args>
-        auto create_worker(Args && ... args)
+        auto create_worker(Args && ... args) -> void
         {
             workers_.emplace_back(std::make_unique<Worker>(std::forward<Args>(args)...));
         }
@@ -233,17 +256,15 @@ namespace txl
                 }
                 
                 auto exec = state.worker_->execute();
-                if (exec.complete)
+                if (exec.complete and state.set_not_busy())
                 {
-                    if (state.set_not_busy())
-                    {
-                        --num_busy_;
-                    }
+                    --num_busy_;
                 }
                 else if (not exec.complete and state.set_busy())
                 {
                     ++num_busy_;
                 }
+
                 ++index;
                 if (index == workers_.size())
                 {
