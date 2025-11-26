@@ -244,7 +244,7 @@ namespace txl
             {
                 return;
             }
-            auto index = 0;
+            size_t index = 0;
             auto unit = work.pop_front();
             while (unit.has_value() or num_busy_ != 0)
             {
