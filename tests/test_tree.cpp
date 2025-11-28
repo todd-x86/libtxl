@@ -20,10 +20,10 @@ TXL_UNIT_TEST(simple)
     bst.emplace("Ted Crilly", 2);
     bst.emplace("Ted Crilly", 3);
 
-    /*assert_equal(*bst.find("Len Brennan"), 7);
+    assert_equal(bst.find("Len Brennan")->second, 7);
     assert_equal(bst.find("Tom"), nullptr);
 
-    bst.remove("Mrs. Doyle");
+    /*bst.remove("Mrs. Doyle");
     bst.remove("Ted Crilly");
     assert_equal(bst.find("Mrs. Doyle"), nullptr);
     assert_not_equal(bst.find("Ted Crilly"), nullptr);*/
