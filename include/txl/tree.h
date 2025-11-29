@@ -30,6 +30,58 @@ namespace txl
                 , children_{nullptr, nullptr}
             {
             }
+            
+            auto min_value() -> std::optional<kv_pair>
+            {
+                node * parent = this;
+                node * n = left();
+                while (n)
+                {
+                    parent = n;
+                    n = n->left();
+                }
+                if (not n)
+                {
+                    std::cout << "SELF\n";
+                    return {std::move(data_)};
+                }
+                if (n->right())
+                {
+                    // Promote up
+                    auto res = std::move(n->data_);
+                    parent->children_.left_ = std::move(n->right_ptr());
+                    return {std::move(res)};
+                }
+
+                auto removed = std::move(parent->left_ptr());
+                return {std::move(removed->data_)};
+            }
+            
+            auto max_value() -> std::optional<kv_pair>
+            {
+                node * parent = this;
+                node * n = right();
+                while (n)
+                {
+                    parent = n;
+                    n = n->right();
+                }
+                if (not n)
+                {
+                    std::cout << "SELF\n";
+                    return {std::move(data_)};
+                }
+                if (n->left())
+                {
+                    // Promote up
+                    auto res = std::move(n->data_);
+                    parent->children_.right_ = std::move(n->left_ptr());
+                    return {std::move(res)};
+                }
+
+                auto removed = std::move(parent->right_ptr());
+                return {std::move(removed->data_)};
+            }
 
             auto left()
             {
@@ -39,6 +91,16 @@ namespace txl
             auto right()
             {
                 return children_.right_.get();
+            }
+            
+            auto left_ptr() -> node_ptr &
+            {
+                return children_.left_;
+            }
+
+            auto right_ptr() -> node_ptr &
+            {
+                return children_.right_;
             }
             
             auto left() const
@@ -96,6 +158,77 @@ namespace txl
 
         auto print() const -> void {
             print(*root_, "");
+        }
+
+        auto remove(Key const & key) -> void
+        {
+            node * parent = nullptr;
+            auto n = root_.get();
+            auto cmp = Less<Key>();
+            while (n)
+            {
+                auto key_lt = cmp(key, n->data_.first);
+                auto key_gt = cmp(n->data_.first, key);
+                if (not key_lt and not key_gt)
+                {
+                    break;
+                }
+
+                if (key_lt)
+                {
+                    parent = n;
+                    n = n->left();
+                }
+                else
+                {
+                    parent = n;
+                    n = n->right();
+                }
+            }
+
+            if (n == nullptr)
+            {
+                // Not found
+                return;
+            }
+
+            std::optional<kv_pair> stolen;
+            if (n->left())
+            {
+                // Pull max from left
+                stolen = n->max_value();
+            }
+            else if (n->right())
+            {
+                // Pull min from right
+                stolen = n->min_value();
+            }
+
+            if (stolen)
+            {
+                // Move up max or min value to replace it
+                std::cout << "STOLEN\n";
+                n->data_ = std::move(*stolen);
+                return;
+            }
+
+            if (parent == nullptr)
+            {
+                // Deleting root
+                std::cout << "ROOT " << std::boolalpha << (n->left() != nullptr) << "|" << (n->right() != nullptr) << "\n";
+                root_.reset();
+                return;
+            }
+
+            // Delete leaf node
+            if (parent->left() == n)
+            {
+                parent->left_ptr().reset();
+                std::cout << "DELETE1\n";
+                return;
+            }
+            parent->right_ptr().reset();
+            std::cout << "DELETE2\n";
         }
 
         auto emplace(Key && key, Value && value) -> void
