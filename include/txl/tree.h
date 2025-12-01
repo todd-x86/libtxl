@@ -30,57 +30,36 @@ namespace txl
                 , children_{nullptr, nullptr}
             {
             }
-            
-            auto min_value() -> std::optional<kv_pair>
+
+            auto assign(node_ptr & n)
+            {
+                // Move n away temporarily so it destructs on its own here
+                auto local = std::move(n);
+                data_ = std::move(local->data_);
+                children_ = std::move(local->children_);
+            }
+
+            auto min_value() -> kv_pair
             {
                 node * parent = this;
-                node * n = left();
-                while (n)
+                node * n = right();
+                while (n and n->left())
                 {
                     parent = n;
                     n = n->left();
                 }
-                if (not n)
-                {
-                    std::cout << "SELF\n";
-                    return {std::move(data_)};
-                }
-                if (n->right())
-                {
-                    // Promote up
-                    auto res = std::move(n->data_);
-                    parent->children_.left_ = std::move(n->right_ptr());
-                    return {std::move(res)};
-                }
 
+                if (parent == this)
+                {
+                    auto res = std::move(n->data_);
+                    // Handle right child and promote up
+                    parent->right_ptr() = std::move(n->right_ptr());
+                    return res;
+                }
                 auto removed = std::move(parent->left_ptr());
-                return {std::move(removed->data_)};
-            }
-            
-            auto max_value() -> std::optional<kv_pair>
-            {
-                node * parent = this;
-                node * n = right();
-                while (n)
-                {
-                    parent = n;
-                    n = n->right();
-                }
-                if (not n)
-                {
-                    std::cout << "SELF\n";
-                    return {std::move(data_)};
-                }
-                if (n->left())
-                {
-                    // Promote up
-                    auto res = std::move(n->data_);
-                    parent->children_.right_ = std::move(n->left_ptr());
-                    return {std::move(res)};
-                }
-
-                auto removed = std::move(parent->right_ptr());
-                return {std::move(removed->data_)};
+                // Handle right child and promote up
+                parent->left_ptr() = std::move(removed->right_ptr());
+                return std::move(removed->data_);
             }
 
             auto left()
@@ -157,7 +136,10 @@ namespace txl
         }
 
         auto print() const -> void {
-            print(*root_, "");
+            if (root_)
+            {
+                print(*root_, "");
+            }
         }
 
         auto remove(Key const & key) -> void
@@ -165,6 +147,7 @@ namespace txl
             node * parent = nullptr;
             auto n = root_.get();
             auto cmp = Less<Key>();
+            auto left_child = false;
             while (n)
             {
                 auto key_lt = cmp(key, n->data_.first);
@@ -177,11 +160,13 @@ namespace txl
                 if (key_lt)
                 {
                     parent = n;
+                    left_child = true;
                     n = n->left();
                 }
                 else
                 {
                     parent = n;
+                    left_child = false;
                     n = n->right();
                 }
             }
@@ -192,43 +177,55 @@ namespace txl
                 return;
             }
 
-            std::optional<kv_pair> stolen;
-            if (n->left())
+            // Root node case
+            if (parent == nullptr)
             {
-                // Pull max from left
-                stolen = n->max_value();
+                if (root_->left() and root_->right())
+                {
+                    root_->data_ = root_->min_value();
+                }
+                else if (root_->right())
+                {
+                    root_ = std::move(root_->right_ptr());
+                }
+                else if (root_->left())
+                {
+                    root_ = std::move(root_->left_ptr());
+                }
+                else
+                {
+                    root_.reset();
+                }
+                return;
+            }
+
+            // If leaf node, just remove it
+            if (n->is_leaf())
+            {
+                if (left_child)
+                {
+                    parent->left_ptr().reset();
+                }
+                else
+                {
+                    parent->right_ptr().reset();
+                }
+                return;
+            }
+
+            // Remove from middle
+            if (n->left() and n->right())
+            {
+                n->data_ = n->min_value();
             }
             else if (n->right())
             {
-                // Pull min from right
-                stolen = n->min_value();
+                n->assign(n->right_ptr());
             }
-
-            if (stolen)
+            else
             {
-                // Move up max or min value to replace it
-                std::cout << "STOLEN\n";
-                n->data_ = std::move(*stolen);
-                return;
+                n->assign(n->left_ptr());
             }
-
-            if (parent == nullptr)
-            {
-                // Deleting root
-                std::cout << "ROOT " << std::boolalpha << (n->left() != nullptr) << "|" << (n->right() != nullptr) << "\n";
-                root_.reset();
-                return;
-            }
-
-            // Delete leaf node
-            if (parent->left() == n)
-            {
-                parent->left_ptr().reset();
-                std::cout << "DELETE1\n";
-                return;
-            }
-            parent->right_ptr().reset();
-            std::cout << "DELETE2\n";
         }
 
         auto emplace(Key && key, Value && value) -> void
