@@ -340,8 +340,7 @@ namespace txl
 
         auto underflows(node const & curr) const -> bool
         {
-            // FIXME: use proper degree
-            return curr.values.size() < 1;
+            return curr.values.size() < degree_-1;
         }
 
         std::unique_ptr<node> root_;

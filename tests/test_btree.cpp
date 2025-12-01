@@ -67,5 +67,43 @@ TXL_UNIT_TEST(random)
     }
 }
 
+TXL_UNIT_TEST(random_degree_5)
+{
+    txl::btree<int, int> bt{5};
+    
+    std::vector<int> keys{};
+    for (auto i = 5000; i > 0; --i)
+    {
+        bt.insert(5000-i+1, i*10);
+        keys.emplace_back(i);
+    }
+    std::random_device rd;
+    // std::mt19937 is a Mersenne Twister engine, a good general-purpose URNG
+    std::mt19937 g(rd());
+
+    // Shuffle the vector using std::shuffle and the random engine
+    std::shuffle(keys.begin(), keys.end(), g);
+    for (auto k : keys)
+    {
+        if (k > 257 or k < 253)
+        {
+            bt.remove(k);
+        }
+    }
+
+    for (auto k : keys)
+    {
+        if (k > 257 or k < 253)
+        {
+            assert_equal(bt.find(k), nullptr);
+        }
+        else
+        {
+            assert_not_equal(bt.find(k), nullptr);
+            assert_equal(*bt.find(k), (5000-k+1)*10);
+        }
+    }
+}
+
 
 TXL_RUN_TESTS()
