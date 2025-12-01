@@ -168,5 +168,40 @@ TXL_UNIT_TEST(edge_case_4)
     assert_equal(bst.find(15), nullptr);
 }
 
+TXL_UNIT_TEST(edge_case_5)
+{
+    /*
+     *        (1)
+     *           \
+     *           (2)
+     *              \
+     *              (4)
+     *             /   \
+     *           (3)   (5)
+     */
+    txl::binary_search_tree<int, std::string> bst{};
+    bst.emplace(1, "A");
+    bst.emplace(2, "B");
+    bst.emplace(4, "D");
+    bst.emplace(3, "C");
+    bst.emplace(5, "E");
+
+    bst.remove(2);
+    
+    assert_equal(bst.find(1)->second, "A");
+    assert_equal(bst.find(2), nullptr);
+    assert_equal(bst.find(3)->second, "C");
+    assert_equal(bst.find(4)->second, "D");
+    assert_equal(bst.find(5)->second, "E");
+    
+    bst.remove(4);
+    
+    assert_equal(bst.find(1)->second, "A");
+    assert_equal(bst.find(2), nullptr);
+    assert_equal(bst.find(3)->second, "C");
+    assert_equal(bst.find(4), nullptr);
+    assert_equal(bst.find(5)->second, "E");
+}
+
 
 TXL_RUN_TESTS()
