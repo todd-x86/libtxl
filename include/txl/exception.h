@@ -5,7 +5,16 @@
 
 namespace txl
 {
-    class exception : std::exception
+    struct debug_info_data
+    {
+        virtual auto get_debug_info(debug_info & di) const -> bool
+        {
+            return false;
+        }
+    };
+
+    class exception : public std::exception
+                    , public debug_info_data
     {
     private:
         std::string msg_;
@@ -34,14 +43,9 @@ namespace txl
         {
             return msg_.c_str();
         }
-
-        virtual auto get_debug_info(debug_info & di) const -> bool
-        {
-            return false;
-        }
     };
 
-    class system_error : exception
+    class system_error : public exception
     {
     private:
         std::error_code err_;

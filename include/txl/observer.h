@@ -1,5 +1,6 @@
 #pragma once
 
+#include <txl/lock_macros.h>
 #include <txl/patterns.h>
 #include <txl/polymorphic.h>
 #include <txl/type_info.h>
@@ -8,6 +9,7 @@
 #include <functional>
 #include <memory>
 #include <set>
+#include <shared_mutex>
 #include <unordered_map>
 #include <vector>
 
@@ -18,6 +20,7 @@
 #define UNOBSERVE_ALL(o) ::txl::messaging::detail::global_dispatcher::instance().remove_all(o)
 #define CONNECT_OBSERVER(o) ::txl::messaging::detail::global_dispatcher::instance().connect(o)
 #define DISCONNECT_OBSERVER(o) ::txl::messaging::detail::global_dispatcher::instance().disconnect(o)
+
 
 namespace txl::messaging
 {
@@ -33,13 +36,14 @@ namespace txl::messaging
     class dispatcher
     {
     private:
-        using callback_func = std::function<bool(void const *)>;
         struct callback final
         {
-            void const * observer_;
-            callback_func func_;
+            using func_type = std::function<bool(void const *)>;
 
-            callback(void const * observer, callback_func && func)
+            void const * observer_;
+            func_type func_;
+
+            callback(void const * observer, func_type && func)
                 : observer_{observer}
                 , func_{std::move(func)}
             {
@@ -50,6 +54,7 @@ namespace txl::messaging
         using type_to_callback_list = std::unordered_map<txl::type_info, callback_list>;
         using type_info_set = std::set<txl::type_info>;
         using observer_type_map = std::unordered_map<void const *, type_info_set>;
+
         type_to_callback_list sub_map_{};
         observer_type_map observer_to_types_{};
 
@@ -234,22 +239,27 @@ namespace txl::messaging
 
             ::txl::messaging::dispatcher disp_;
             ::txl::polymorphic_container_map<dispatcher_set> observers_;
+            std::shared_mutex mutex_;
         public:
             static auto instance() -> global_dispatcher &
             {
-                static thread_local global_dispatcher g{};
+                static global_dispatcher g{};
                 return g;
             }
 
             template<class Observer>
             auto connect(std::shared_ptr<Observer> const & o) -> void
             {
+                UNIQUE_LOCK(mutex_);
+
                 observers_.get<Observer>().insert(o);
             }
 
             template<class Observer>
             auto disconnect(std::shared_ptr<Observer> const & o) -> void
             {
+                UNIQUE_LOCK(mutex_);
+
                 if (not observers_.contains<Observer>())
                 {
                     return;
@@ -264,30 +274,40 @@ namespace txl::messaging
             template<class Msg>
             auto dispatch(Msg const & msg) -> void
             {
+                SHARED_LOCK(mutex_);
+
                 disp_.dispatch(msg);
             }
 
             template<class Msg, class MsgFactory>
             auto lazy_dispatch(MsgFactory const & msg_func) -> void
             {
+                SHARED_LOCK(mutex_);
+
                 disp_.lazy_dispatch<Msg>(msg_func);
             }
 
             template<class... Msgs, class Observer>
             auto add(Observer & o) -> void
             {
+                UNIQUE_LOCK(mutex_);
+
                 disp_.subscribe<Msgs...>(o);
             }
             
             template<class... Msgs, class Observer>
             auto remove(Observer & o) -> void
             {
+                UNIQUE_LOCK(mutex_);
+
                 disp_.unsubscribe<Msgs...>(o);
             }
 
             template<class Observer>
             auto remove_all(Observer & o) -> void
             {
+                UNIQUE_LOCK(mutex_);
+
                 disp_.unsubscribe_all(o);
             }
             
