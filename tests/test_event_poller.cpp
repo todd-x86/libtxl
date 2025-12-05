@@ -4,7 +4,7 @@
 
 #include <string_view>
 
-TXL_UNIT_TEST(TestOpenClose)
+TXL_UNIT_TEST(event_poller_open_close)
 {
     auto p = txl::event_poller{};
 
@@ -17,7 +17,7 @@ TXL_UNIT_TEST(TestOpenClose)
     assert_false(p.is_open());
 }
 
-TXL_UNIT_TEST(TestPollEmpty)
+TXL_UNIT_TEST(event_poller_empty)
 {
     auto p = txl::event_poller{};
     auto events = txl::event_array<10>{};
@@ -31,7 +31,7 @@ TXL_UNIT_TEST(TestPollEmpty)
     assert_equal(num_available, 0);
 }
 
-TXL_UNIT_TEST(TestPipe)
+TXL_UNIT_TEST(event_poller_pipe)
 {
     auto p = txl::event_poller{};
     auto events = txl::event_array<10>{};
@@ -53,93 +53,87 @@ TXL_UNIT_TEST(TestPipe)
     assert_equal(events[0].events(), txl::event_type::in);
     assert_equal(events[0].fd(), c.input().fd());
 }
-/*
-TXL_UNIT_TEST(TestAdd)
+
+TXL_UNIT_TEST(event_poller_add)
 {
     auto p = txl::event_poller{};
     
     {
-        auto res = p.open();
-        assert_equal(res.status_code(), hpi::status::ok);
+        p.open().or_throw();
         assert_true(p.is_open());
     }
 
-    auto c = hpi::system::pipe_connector{};
+    auto c = txl::pipe_connector{};
     {
-        auto res = c.open();
-        assert_equal(res.status_code(), hpi::status::ok);
+        c.open().or_throw();
         assert_true(c.input().is_open());
         assert_true(c.output().is_open());
 
-        auto add_res = p.add(c.input().fd(), hpi::system::epoll::event_type::in);
-        assert_true(add_res.ok());
+        auto add_res = p.add(c.input().fd(), txl::event_type::in);
+        assert_true(add_res);
         
-        auto add_res2 = p.add(c.input().fd(), hpi::system::epoll::event_type::in);
-        assert_false(add_res2.ok());
-        assert_equal(add_res2.status_code(), hpi::status::system_error);
-        assert_equal(add_res2.error(), hpi::system::error::already_exists);
+        auto add_res2 = p.add(c.input().fd(), txl::event_type::in);
+        assert_false(add_res2);
+        assert_equal(add_res2.error(), txl::get_system_error(EEXIST));
     }
 }
 
-TXL_UNIT_TEST(TestModify)
+TXL_UNIT_TEST(event_poller_modify)
 {
     auto p = txl::event_poller{};
     
     {
         auto res = p.open();
-        assert_equal(res.status_code(), hpi::status::ok);
+        assert_false(res.is_error());
         assert_true(p.is_open());
     }
 
-    auto c = hpi::system::pipe_connector{};
+    auto c = txl::pipe_connector{};
     {
         auto res = c.open();
-        assert_equal(res.status_code(), hpi::status::ok);
+        assert_false(res.is_error());
         assert_true(c.input().is_open());
         assert_true(c.output().is_open());
 
-        auto add_res = p.add(c.input().fd(), hpi::system::epoll::event_type::in);
-        assert_true(add_res.ok());
+        auto add_res = p.add(c.input().fd(), txl::event_type::in);
+        assert_false(add_res.is_error());
 
-        auto mod_res = p.modify(c.input().fd(), hpi::system::epoll::event_type::out);
-        assert_true(mod_res.ok());
+        auto mod_res = p.modify(c.input().fd(), txl::event_type::out);
+        assert_false(mod_res.is_error());
         
-        mod_res = p.modify(0, hpi::system::epoll::event_type::out);
-        assert_false(mod_res.ok());
-        assert_equal(mod_res.status_code(), hpi::status::system_error);
-        assert_equal(mod_res.error(), hpi::system::error::no_entry);
+        mod_res = p.modify(0, txl::event_type::out);
+        assert_true(mod_res.is_error());
+        assert_equal(mod_res.error(), txl::get_system_error(ENOENT));
     }
 }
 
-TXL_UNIT_TEST(TestRemove)
+TXL_UNIT_TEST(event_poller_remove)
 {
     auto p = txl::event_poller{};
     
     {
         auto res = p.open();
-        assert_equal(res.status_code(), hpi::status::ok);
+        assert_false(res.is_error());
         assert_true(p.is_open());
     }
 
-    auto c = hpi::system::pipe_connector{};
+    auto c = txl::pipe_connector{};
     {
         auto res = c.open();
-        assert_equal(res.status_code(), hpi::status::ok);
+        assert_false(res.is_error());
         assert_true(c.input().is_open());
         assert_true(c.output().is_open());
 
-        auto add_res = p.add(c.input().fd(), hpi::system::epoll::event_type::in);
-        assert_true(add_res.ok());
+        auto add_res = p.add(c.input().fd(), txl::event_type::in);
+        assert_false(add_res.is_error());
 
         auto rem_res = p.remove(c.input().fd());
-        assert_true(rem_res.ok());
+        assert_false(rem_res.is_error());
         
         rem_res = p.remove(c.input().fd());
-        assert_false(rem_res.ok());
-        assert_equal(rem_res.status_code(), hpi::status::system_error);
-        assert_equal(rem_res.error(), hpi::system::error::no_entry);
+        assert_true(rem_res.is_error());
+        assert_equal(rem_res.error(), txl::get_system_error(ENOENT));
     }
 }
-*/
 
 TXL_RUN_TESTS()

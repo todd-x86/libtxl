@@ -4,7 +4,7 @@
 
 #include <chrono>
 
-TXL_UNIT_TEST(TestEventTimerSteadyClock)
+TXL_UNIT_TEST(steady_clock_timer)
 {
     auto p = txl::event_poller{};
     auto t = txl::event_timer{};
@@ -25,7 +25,7 @@ TXL_UNIT_TEST(TestEventTimerSteadyClock)
     p.close().or_throw();
 }
 
-TXL_UNIT_TEST(TestEventTimerSystemClock)
+TXL_UNIT_TEST(system_clock_timer)
 {
     auto p = txl::event_poller{};
     auto t = txl::event_timer{};
@@ -46,7 +46,7 @@ TXL_UNIT_TEST(TestEventTimerSystemClock)
     p.close().or_throw();
 }
 
-TXL_UNIT_TEST(TestEventTimerLooping)
+TXL_UNIT_TEST(looping)
 {
     auto p = txl::event_poller{};
     auto t = txl::event_timer{};

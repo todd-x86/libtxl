@@ -3,7 +3,7 @@
 
 #include <string_view>
 
-TXL_UNIT_TEST(TestOpen)
+TXL_UNIT_TEST(open_pipe)
 {
     auto c = txl::pipe_connector{};
     assert_false(c.input().is_open());
@@ -15,7 +15,7 @@ TXL_UNIT_TEST(TestOpen)
     assert_true(c.output().is_open());
 }
 
-TXL_UNIT_TEST(TestReadWrite)
+TXL_UNIT_TEST(read_write)
 {
     auto c = txl::pipe_connector{};
     c.open().or_throw();
