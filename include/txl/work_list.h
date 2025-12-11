@@ -108,7 +108,7 @@ namespace txl
         template<class WorkUnit, class... Args>
         auto emplace_back(Args && ... args) -> void
         {
-            work_.emplace_back(std::make_unique<WorkUnit>(std::forward(args)...));
+            work_.emplace_back(std::make_unique<WorkUnit>(std::forward<Args>(args)...));
         }
 
         auto size() const -> size_t { return work_.size(); }

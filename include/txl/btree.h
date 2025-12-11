@@ -1,9 +1,10 @@
 #pragma once
 
+#include <txl/vector.h>
+
 #include <memory>
 #include <optional>
 #include <stdexcept>
-#include <vector>
 
 namespace txl
 {
@@ -31,8 +32,8 @@ namespace txl
 
         struct node final
         {
-            std::vector<node_ptr> children;
-            std::vector<kv_pair> values;
+            txl::vector<node_ptr> children;
+            txl::vector<kv_pair> values;
         
             auto find(Key const & key) const -> Value const *
             {
@@ -54,7 +55,7 @@ namespace txl
                 {
                     throw std::runtime_error{"wrong index"};
                 }
-                values.erase(values.begin() + index);
+                values.erase_at(index);
             }
 
             auto remove_child_at(size_t index) -> void
@@ -106,7 +107,18 @@ namespace txl
 
             auto index_of(Key const & key) const -> index_of_result
             {
-                auto it = std::lower_bound(values.begin(), values.end(), key, [](auto const & v, auto const & key) { return v.first < key; });
+                auto it = values.lower_bound(key, [](auto const & v, auto const & key) { return v.first < key; });
+                auto index = std::distance(values.begin(), it);
+                if (it != values.end() and it->first == key)
+                {
+                    return {static_cast<size_t>(index), true};
+                }
+                return {static_cast<size_t>(index), false};
+            }
+            
+            auto upper_index_of(Key const & key) const -> index_of_result
+            {
+                auto it = values.upper_bound(key, [](auto const & key, auto const & v) { return v.first >= key; });
                 auto index = std::distance(values.begin(), it);
                 if (it != values.end() and it->first == key)
                 {
@@ -122,9 +134,9 @@ namespace txl
 
             auto insert_into(kv_pair && data) -> size_t
             {
-                auto res = index_of(data.first);
-                values.emplace(std::next(values.begin(), res.index), std::move(data));
-                children.emplace(std::next(children.begin(), res.index), nullptr);
+                auto res = upper_index_of(data.first);
+                values.emplace_at(res.index, std::move(data));
+                children.emplace_at(res.index, nullptr);
                 return res.index;
             }
         };
@@ -133,7 +145,7 @@ namespace txl
         {
             while (curr)
             {
-                auto it = std::lower_bound(curr->values.begin(), curr->values.end(), key, [](auto const & v, auto const & key) { return v.first < key; });
+                auto it = curr->values.lower_bound(key, [](auto const & v, auto const & key) { return v.first < key; });
                 auto index = std::distance(curr->values.begin(), it);
                 if (it == curr->values.end() or it->first < key)
                 {

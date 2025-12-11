@@ -1,5 +1,7 @@
 #pragma once
 
+#include <txl/patterns.h>
+
 #include <algorithm>
 #include <functional>
 #include <vector>
@@ -15,6 +17,12 @@ namespace txl
         using value_type = typename std::vector<Value, Alloc>::value_type;
 
         using std::vector<Value, Alloc>::vector;
+
+        template<class... Args>
+        auto emplace_at(size_t index, Args && ... args)
+        {
+            return this->emplace(std::next(this->begin(), index), std::forward<Args>(args)...);
+        }
 
         auto erase_at(size_t index) -> void
         {
@@ -40,6 +48,30 @@ namespace txl
         auto sort(Comp const & cmp) -> void
         {
             std::sort(this->begin(), this->end(), cmp);
+        }
+        
+        template<class CmpVal>
+        auto lower_bound(CmpVal const & value) const -> const_iterator
+        {
+            return txl::lower_bound(*this, value);
+        }
+        
+        template<class CmpVal>
+        auto upper_bound(CmpVal const & value) const -> const_iterator
+        {
+            return txl::upper_bound(*this, value);
+        }
+        
+        template<class CmpVal, class CompareFunc>
+        auto lower_bound(CmpVal const & value, CompareFunc cmp) const -> const_iterator
+        {
+            return txl::lower_bound(*this, value, cmp);
+        }
+        
+        template<class CmpVal, class CompareFunc>
+        auto upper_bound(CmpVal const & value, CompareFunc cmp) const -> const_iterator
+        {
+            return txl::upper_bound(*this, value, cmp);
         }
 
         auto index_of(Value const & value) const -> std::optional<size_t>

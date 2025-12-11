@@ -1,5 +1,7 @@
 #pragma once
 
+#include <txl/patterns.h>
+
 #include <algorithm>
 #include <functional>
 
@@ -30,13 +32,13 @@ namespace txl
         auto emplace_sorted(Args && ... args)
         {
             value_type val(std::forward<Args>(args)...);
-            auto it = std::lower_bound(this->begin(), this->end(), val, Less<value_type>{});
+            auto it = upper_bound(*this, val, Less<value_type>{});
             return this->emplace(it, std::move(val));
         }
         
         auto insert_sorted(value_type const & val)
         {
-            auto it = std::lower_bound(this->begin(), this->end(), val, Less<value_type>{});
+            auto it = upper_bound(*this, val, Less<value_type>{});
             return this->insert(it, val);
         }
 
