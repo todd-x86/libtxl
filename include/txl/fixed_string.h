@@ -55,7 +55,7 @@ namespace txl
 
         auto to_string_view() const -> std::basic_string_view<Char>
         {
-            return {data(), size()};
+            return {data(), std::min(Size, size())};
         }
         
         auto clear()
