@@ -1,5 +1,7 @@
 #pragma once
 
+// Replace with std::inplace_vector in C++26
+
 #include <txl/iterators.h>
 #include <txl/iterator_view.h>
 #include <txl/storage.h>
