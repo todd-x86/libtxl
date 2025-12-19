@@ -30,7 +30,7 @@ namespace txl
 
             auto operator()(Value const & value, Key const & key) const -> bool
             {
-                return (*this)(key, value);
+                return (*this)(key_extractor(value), key);
             }
             
             auto operator()(Value const & value1, Value const & value2) const -> bool
@@ -83,10 +83,10 @@ namespace txl
         auto intersect(set<Key, KeyLess, C> const & keys, KeyExtractFunc key_extractor)
         {
             set res{};
-            std::set_intersection(keys.begin(), keys.end(),
-                                  begin(), end(),
+            std::set_intersection(begin(), end(),
+                                  keys.begin(), keys.end(),
                                   std::back_inserter(res.values_),
-                                  key_comparer<Key, KeyLess, KeyExtractFunc>{});
+                                  key_comparer<Key, KeyLess, KeyExtractFunc>{key_extractor});
             return res;
         }
         
