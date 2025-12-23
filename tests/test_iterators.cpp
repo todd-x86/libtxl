@@ -32,4 +32,22 @@ TXL_UNIT_TEST(circular_iterator)
     assert_equal(*it, '3');
 }
 
+TXL_UNIT_TEST(custom_insert_iterator)
+{
+    std::vector<std::string> people{
+        "Dummy Princess Margaret",
+        "Nigel Incubator-Jones",
+        "Dickie Attenborough",
+        "David Niven's Fridge",
+        "Raymond Luxury Yacht",
+    };
+    std::vector<std::string> dummies{};
+    auto it = txl::make_custom_insert_iterator([&](auto x) {
+        dummies.emplace_back(std::move(x));
+    });
+
+    txl::iter_copy_n(people.begin(), people.size(), it);
+    assert_equal(people, dummies);
+}
+
 TXL_RUN_TESTS()

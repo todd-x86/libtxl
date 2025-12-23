@@ -206,6 +206,29 @@ namespace txl
             return {current_ - d};
         }
     };
+
+    template<class MoveAssignFunc>
+    class custom_insert_iterator
+    {
+    private:
+        MoveAssignFunc assign_;
+    public:
+        custom_insert_iterator(MoveAssignFunc && on_assign)
+            : assign_{std::move(on_assign)}
+        {
+        }
+
+        auto operator*() -> custom_insert_iterator & { return *this; }
+        auto operator++() -> custom_insert_iterator & { return *this; }
+        auto operator++(int) -> custom_insert_iterator & { return *this; }
+        
+        template<class Value>
+        auto operator=(Value && val) -> custom_insert_iterator &
+        {
+            assign_(val);
+            return *this;
+        }
+    };
     
     template<class Iter>
     inline auto make_circular_iterator(Iter begin, Iter end) noexcept -> circular_iterator<Iter>
@@ -240,6 +263,12 @@ namespace txl
             new (&(*dst_end)) value_type{std::move(*src_end)};
         }
     }
+    
+    template<class AssignFunc>
+    inline auto make_custom_insert_iterator(AssignFunc && on_assign) -> custom_insert_iterator<AssignFunc>
+    {
+        return {std::move(on_assign)};
+    }
 }
 
 namespace std
@@ -252,5 +281,15 @@ namespace std
         using pointer = T *;
         using iterator_category = bidirectional_iterator_tag;
         using difference_type = ptrdiff_t;
+    };
+    
+    template<class AssignFunc>
+    struct iterator_traits<txl::custom_insert_iterator<AssignFunc>>
+    {
+        using value_type = void;
+        using reference = void;
+        using pointer = void;
+        using iterator_category = output_iterator_tag;
+        using difference_type = void;
     };
 }

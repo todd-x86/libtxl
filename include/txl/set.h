@@ -45,10 +45,22 @@ namespace txl
         set() = default;
         set(std::initializer_list<Value> values)
         {
-            for (auto & val : values)
+            for (auto const & val : values)
             {
-                add(std::move(val));
+                add(val);
             }
+        }
+
+        auto contains(Value const & v) const -> bool
+        {
+            auto it = lower_bound(v);
+            auto cmp = Less{};
+            return (it != end() and not cmp(*it, v) and not cmp(v, *it));
+        }
+        
+        auto lower_bound(Value const & v) const -> const_iterator
+        {
+            return txl::lower_bound(values_, v, Less{});
         }
 
         auto begin() const -> const_iterator
@@ -59,6 +71,19 @@ namespace txl
         auto end() const -> const_iterator
         {
             return values_.end();
+        }
+        
+        auto add(Value const & v)
+        {
+            auto cmp = Less{};
+            auto it = txl::lower_bound(values_, v, cmp);
+
+            if (it != end() and not cmp(*it, v) and not cmp(v, *it))
+            {
+                // Already exists
+                return;
+            }
+            values_.emplace(it, v);
         }
 
         auto add(Value && v)
@@ -72,6 +97,19 @@ namespace txl
                 return;
             }
             values_.emplace(it, std::move(v));
+        }
+
+        auto erase(Value const & v) -> void
+        {
+            if (auto it = lower_bound(v); it != end())
+            {
+                erase(it);
+            }
+        }
+
+        auto erase(const_iterator it) -> void
+        {
+            values_.erase(it);
         }
 
         auto size() const -> size_t
