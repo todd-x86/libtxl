@@ -60,6 +60,32 @@ namespace txl::http
             }
         };
 
+        struct any final
+        {
+            auto operator()(char ch) const -> bool
+            {
+                return true;
+            }
+        };
+
+        class exactly final
+        {
+        private:
+            size_t num_read_ = 0;
+            size_t num_to_read_;
+        public:
+            exactly(size_t num_to_read)
+                : num_to_read_{num_to_read}
+            {
+            }
+
+            auto operator()(char ch) -> bool
+            {
+                ++num_read_;
+                return num_read_ <= num_to_read_;
+            }
+        };
+
         lexer(std::string_view data, size_t index = 0)
             : data_{data}
             , index_{index}
@@ -102,7 +128,12 @@ namespace txl::http
 
         auto read_one(char c) -> status
         {
-            return read(is(c), 1, 1);
+            return read(is({c}), 1, 1);
+        }
+
+        auto skip(size_t num_chars) -> status
+        {
+            return read(exactly(num_chars));
         }
         
         template<class Cond>
@@ -185,12 +216,9 @@ namespace txl::http
             REQUEST_TYPE, // e.g. "GET"
             REQUEST_TYPE_SPACE, // " "
             URI, // e.g. "/foo"
-            QUERY_PARAM, // '?'
             QUERY_PARAM_NAME, // e.g. "id"
             QUERY_PARAM_EQU, // '='
             QUERY_PARAM_VALUE, // e.g. "123"
-            QUERY_PARAM_SEP, // '&'
-            URI_SPACE, // " "
             HTTP_VERSION, // e.g. "HTTP/1.1"
             REQUEST_CR, // "\r"
             REQUEST_LF, // "\n"
@@ -279,28 +307,18 @@ namespace txl::http
                             switch (res.last_match)
                             {
                                 case '?':
-                                    state_ = state::QUERY_PARAM;
+                                    lex.skip(1);
+                                    state_ = state::QUERY_PARAM_NAME;
                                     break;
                                 case ' ':
-                                    state_ = state::URI_SPACE;
+                                    lex.skip(1);
+                                    state_ = state::HTTP_VERSION;
                                     break;
                                 default:
                                     state_ = state::PARSER_ERROR;
                                     break;
                             }
                         }
-                        break;
-                    }
-                    case state::QUERY_PARAM:
-                    {
-                        auto res = lex.read_one('?');
-                        if (res.complete)
-                        {
-                        }
-                        else
-                        {
-                        }
-                        state_ = QUERY_PARAM_NAME;
                         break;
                     }
                     case state::QUERY_PARAM_NAME:
@@ -313,23 +331,6 @@ namespace txl::http
                     }
                     case state::QUERY_PARAM_VALUE:
                     {
-                        break;
-                    }
-                    case state::QUERY_PARAM_SEP:
-                    {
-                        break;
-                    }
-                    case state::URI_SPACE:
-                    {
-                        auto res = lex.read_one(' ');
-                        if (res.complete)
-                        {
-                            state_ = state::HTTP_VERSION;
-                        }
-                        else
-                        {
-                            state_ = state::PARSER_ERROR;
-                        }
                         break;
                     }
                     case state::HTTP_VERSION:
