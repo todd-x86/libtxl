@@ -1,6 +1,7 @@
 #pragma once
 
 #include <txl/buffer_ref.h>
+#include <txl/lexer.h>
 #include <txl/set.h>
 #include <txl/socket_address.h>
 #include <txl/socket.h>
@@ -9,149 +10,209 @@
 #include <txl/size_policy.h>
 #include <iostream>
 #include <optional>
+#include <ostream>
+#include <sstream>
+#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <vector>
 
 namespace txl::http
 {
-    class lexer final
+    struct url_decode_error : std::runtime_error
+    {
+        using std::runtime_error::runtime_error;
+    };
+
+    namespace detail
+    {
+        struct hex_transformer final
+        {
+            auto hex_to_int(char c) -> int
+            {
+                if (c >= '0' and c <= '9')
+                {
+                    return c - '0';
+                }
+                if (c >= 'a' and c <= 'f')
+                {
+                    return 10 + (c - 'a');
+                }
+                if (c >= 'A' and c <= 'F')
+                {
+                    return 10 + (c - 'A');
+                }
+                throw url_decode_error{"non-hexadecimal character received"};
+            }
+
+            auto operator()(::txl::lexer::tokenizer & tok, std::ostringstream & dst) -> void
+            {
+                // Got '%'
+                tok.skip();
+
+                auto hex1 = tok.read_one();
+                auto hex2 = tok.read_one();
+
+                char decoded = (hex_to_int(hex1) << 4) | hex_to_int(hex2);
+
+                dst.put(decoded);
+            }
+        };
+    }
+    
+    struct query_param
+    {
+        std::string name;
+        std::string value;
+
+        auto operator==(query_param const & p) const -> bool
+        {
+            return name == p.name and value == p.value;
+        }
+    };
+
+    inline auto operator<<(std::ostream & os, query_param const & p) -> std::ostream &
+    {
+        os << "(" << p.name << "=" << p.value << ")";
+        return os;
+    }
+
+    struct query_param_notifier
+    {
+        virtual auto on_param(query_param param) -> void = 0;
+    };
+
+    struct query_param_vector : std::vector<query_param>
+                              , query_param_notifier
+    {
+        using std::vector<query_param>::vector;
+
+        auto on_param(query_param param) -> void override
+        {
+            this->emplace_back(std::move(param));
+        }
+    };
+
+    class query_string_parser
     {
     private:
-        std::string_view data_;
-        size_t index_;
+        enum state
+        {
+            S0, // <start> ('?')
+            S1, // <name> ('=' -> S2, '&' -> S1)
+            S2, // <val> ('&' -> S1)
+            S3, // <end>
+            S4, // <error>
+        };
+
+
+        state state_ = S0;
+        std::ostringstream name_;
+        std::ostringstream value_;
+
+        auto parse_state_0(::txl::lexer::tokenizer & tok)
+        {
+            if (not tok.try_expect('?'))
+            {
+                state_ = S4;
+                return;
+            }
+            state_ = S1;
+            name_.str("");
+        }
+
+        auto reset(state s)
+        {
+            name_.str("");
+            value_.str("");
+            state_ = s;
+        }
+
+        auto consume_tokens(::txl::lexer::tokenizer & tok, std::ostringstream & dst)
+        {
+            using namespace ::txl::lexer;
+
+            tok.consume_while(in_range{'0', '9'} 
+                            | in_range{'A', 'Z'}
+                            | in_range{'a', 'z'} 
+                            | in_set{{'!', '$', '\'', '*', '-', '.', '^', '_', '`', '|', '~'}}
+                            | transform{in_set({'%'}), detail::hex_transformer{}}
+                            | transform{in_set({'+'}), [](auto & tok, auto & dst) { tok.skip(); dst.put(' '); }}
+                            , dst);
+        }
+
+        auto notify(query_param_notifier & notif)
+        {
+            if (name_.tellp() != 0)
+            {
+                notif.on_param({name_.str(), value_.str()});
+            }
+        }
+
+        auto parse_state_1(::txl::lexer::tokenizer & tok, query_param_notifier & notif)
+        {
+            consume_tokens(tok, name_);
+            switch (tok.peek(-1))
+            {
+                case '=':
+                    tok.skip();
+                    state_ = S2;
+                    break;
+                case '&':
+                case '?':
+                    tok.skip();
+                    notify(notif);
+                    reset(S1);
+                    break;
+                default:
+                    notify(notif);
+                    reset(S3);
+                    break;
+            }
+        }
+        
+        auto parse_state_2(::txl::lexer::tokenizer & tok, query_param_notifier & notif)
+        {
+            consume_tokens(tok, value_);
+            switch (tok.peek(-1))
+            {
+                case '&':
+                    tok.skip();
+                    notify(notif);
+                    reset(S1);
+                    break;
+                default:
+                    notify(notif);
+                    reset(S3);
+                    break;
+            }
+        }
     public:
-        struct status final
+        auto is_error() const -> bool
         {
-            std::string_view lexed;
-            char last_match = '\0';
-            bool complete = false;
-        };
-
-        class is final
-        {
-        private:
-            ::txl::set<char> allowed_;
-        public:
-            is(::txl::set<char> && allowed)
-                : allowed_{std::move(allowed)}
-            {
-            }
-
-            auto operator()(char ch) const -> bool
-            {
-                return allowed_.contains(ch);
-            }
-        };
-        
-        class is_not final
-        {
-        private:
-            ::txl::set<char> not_allowed_;
-        public:
-            is_not(::txl::set<char> && not_allowed)
-                : not_allowed_{std::move(not_allowed)}
-            {
-            }
-
-            auto operator()(char ch) const -> bool
-            {
-                return not not_allowed_.contains(ch);
-            }
-        };
-
-        struct any final
-        {
-            auto operator()(char ch) const -> bool
-            {
-                return true;
-            }
-        };
-
-        class exactly final
-        {
-        private:
-            size_t num_read_ = 0;
-            size_t num_to_read_;
-        public:
-            exactly(size_t num_to_read)
-                : num_to_read_{num_to_read}
-            {
-            }
-
-            auto operator()(char ch) -> bool
-            {
-                ++num_read_;
-                return num_read_ <= num_to_read_;
-            }
-        };
-
-        lexer(std::string_view data, size_t index = 0)
-            : data_{data}
-            , index_{index}
-        {
+            return state_ == S4;
         }
 
-        auto is_complete() const -> bool
+        auto parse(::txl::lexer::tokenizer & tok, query_param_notifier & notif)
         {
-            return index_ >= data_.size();
-        }
-
-        template<class Cond>
-        auto read(Cond && cond, std::optional<size_t> min = {}, std::optional<size_t> max = {}) -> status
-        {
-            auto last = index_;
-            while (index_ < data_.size() and cond(data_[index_]))
+            while (not tok.empty())
             {
-                ++index_;
+                switch (state_)
+                {
+                    case S0:
+                        parse_state_0(tok);
+                        break;
+                    case S1:
+                        parse_state_1(tok, notif);
+                        break;
+                    case S2:
+                        parse_state_2(tok, notif);
+                        break;
+                    case S3:
+                    case S4:
+                        return;
+                }
             }
-            auto dist = index_ - last;
-            if (min.has_value() and dist < *min)
-            {
-                index_ = last;
-                return {};
-            }
-            if (max.has_value() and dist > *max)
-            {
-                index_ = last;
-                return {};
-            }
-
-            // `complete` is driven by making it to the condition
-            auto last_match = '\0';
-            if (index_ < data_.size())
-            {
-                last_match = data_[index_];
-            }
-            return {data_.substr(last, index_-last), last_match, (last != index_ and index_ < data_.size())};
-        }
-
-        auto read_one(char c) -> status
-        {
-            return read(is({c}), 1, 1);
-        }
-
-        auto skip(size_t num_chars) -> status
-        {
-            return read(exactly(num_chars));
-        }
-        
-        template<class Cond>
-        auto peek(Cond && cond) const -> status
-        {
-            auto idx = index_;
-            while (idx < data_.size() and cond(data_[idx]))
-            {
-                ++idx;
-            }
-
-            // `complete` is driven by making it to the condition
-            auto last_match = '\0';
-            if (idx < data_.size())
-            {
-                last_match = data_[idx];
-            }
-            return {data_.substr(index_, idx-index_), last_match, (index_ != idx and idx < data_.size())};
         }
     };
 
@@ -159,8 +220,6 @@ namespace txl::http
     {
         std::string name;
         std::string value;
-
-        http_header_field() = default;
     };
     
     inline auto operator<<(std::ostream & os, http_header_field const & field) -> std::ostream &
@@ -168,26 +227,12 @@ namespace txl::http
         os << field.name << ": " << field.value;
         return os;
     }
-    
-    struct http_query_param final
-    {
-        std::string name;
-        std::string value;
-
-        http_query_param() = default;
-    };
-    
-    inline auto operator<<(std::ostream & os, http_query_param const & param) -> std::ostream &
-    {
-        os << param.name << "=" << param.value;
-        return os;
-    }
 
     struct http_request
     {
         std::string request_type;
         std::string uri;
-        std::vector<http_query_param> query_params;
+        query_param_vector query_params;
         std::string http_version;
         std::vector<http_header_field> headers;
     };
@@ -214,17 +259,12 @@ namespace txl::http
         enum class state
         {
             REQUEST_TYPE, // e.g. "GET"
-            REQUEST_TYPE_SPACE, // " "
             URI, // e.g. "/foo"
-            QUERY_PARAM_NAME, // e.g. "id"
-            QUERY_PARAM_EQU, // '='
-            QUERY_PARAM_VALUE, // e.g. "123"
+            QUERY_PARAM, // e.g. "?id=123"
             HTTP_VERSION, // e.g. "HTTP/1.1"
             REQUEST_CR, // "\r"
             REQUEST_LF, // "\n"
             HEADER_KEY, // e.g. "Host"
-            HEADER_COL, // ":"
-            HEADER_SPACE, // " "
             HEADER_VALUE, // e.g. "nuradius.com"
             HEADER_CR, // "\r"
             HEADER_LF, // "\n"
@@ -235,6 +275,7 @@ namespace txl::http
         };
     private:
         http_request stg_;
+        query_string_parser query_string_parser_;
         state state_ = state::REQUEST_TYPE;
         bool new_header_ = true;
 
@@ -270,83 +311,95 @@ namespace txl::http
 
         auto process(std::string_view data) -> size_t
         {
-            auto lex = lexer{data};
-            while (not lex.is_complete())
+            using namespace txl::lexer;
+
+            std::ostringstream tok_buf{};
+            auto tok = ::txl::lexer::tokenizer{data};
+            while (not tok.empty())
             {
                 switch (state_)
                 {
                     case state::REQUEST_TYPE:
                     {
-                        auto res = lex.read( lexer::is_not({' ', '\r', '\n'}) );
-                        stg_.request_type.append(res.lexed);
-                        if (res.complete)
+                        tok_buf.str("");
+                        tok.consume_until( in_set({' ', '\r', '\n'}), tok_buf );
+                        stg_.request_type.append(tok_buf.str());
+                        switch (tok.peek(-1))
                         {
-                            state_ = state::REQUEST_TYPE_SPACE;
-                        }
-                        break;
-                    }
-                    case state::REQUEST_TYPE_SPACE:
-                    {
-                        auto res = lex.read_one(' ');
-                        if (res.complete)
-                        {
-                            state_ = state::URI;
-                        }
-                        else
-                        {
-                            state_ = state::PARSER_ERROR;
+                            case ' ':
+                                tok.skip();
+                                state_ = state::URI;
+                                break;
+                            case -1:
+                                break;
+                            default:
+                                state_ = state::PARSER_ERROR;
+                                break;
                         }
                         break;
                     }
                     case state::URI:
                     {
-                        auto res = lex.read( lexer::is_not({' ', '\r', '\n', '?'}) );
-                        stg_.uri.append(res.lexed);
-                        if (res.complete)
+                        tok_buf.str("");
+                        tok.consume_until( in_set({' ', '\r', '\n', '?'}), tok_buf );
+                        stg_.uri.append(tok_buf.str());
+                        switch (tok.peek(-1))
                         {
-                            switch (res.last_match)
-                            {
-                                case '?':
-                                    lex.skip(1);
-                                    state_ = state::QUERY_PARAM_NAME;
-                                    break;
-                                case ' ':
-                                    lex.skip(1);
-                                    state_ = state::HTTP_VERSION;
-                                    break;
-                                default:
-                                    state_ = state::PARSER_ERROR;
-                                    break;
-                            }
+                            case '?':
+                                state_ = state::QUERY_PARAM;
+                                break;
+                            case ' ':
+                                tok.skip();
+                                state_ = state::HTTP_VERSION;
+                                break;
+                            case -1:
+                                break;
+                            default:
+                                state_ = state::PARSER_ERROR;
+                                break;
                         }
                         break;
                     }
-                    case state::QUERY_PARAM_NAME:
+                    case state::QUERY_PARAM:
                     {
-                        break;
-                    }
-                    case state::QUERY_PARAM_EQU:
-                    {
-                        break;
-                    }
-                    case state::QUERY_PARAM_VALUE:
-                    {
+                        query_string_parser_.parse(tok, stg_.query_params);
+                        if (query_string_parser_.is_error())
+                        {
+                            state_ = state::PARSER_ERROR;
+                        }
+                        else
+                        {
+                            state_ = state::HTTP_VERSION;
+                        }
                         break;
                     }
                     case state::HTTP_VERSION:
                     {
-                        auto res = lex.read( lexer::is_not({' ', '\r', '\n'}) );
-                        stg_.http_version.append(res.lexed);
-                        if (res.complete)
+                        tok_buf.str("");
+                        tok.consume_until( in_set({'\r', '\n'}), tok_buf );
+                        stg_.http_version.append(tok_buf.str());
+                        switch (tok.peek(-1))
                         {
-                            state_ = state::REQUEST_CR;
+                            case '\r':
+                                tok.skip();
+                                state_ = state::REQUEST_CR;
+                                break;
+                            case '\n':
+                                tok.skip();
+                                state_ = state::REQUEST_LF;
+                                break;
+                            case -1:
+                                break;
                         }
                         break;
                     }
                     case state::REQUEST_CR:
                     {
-                        auto res = lex.read_one('\r');
-                        if (res.complete)
+                        if (tok.empty())
+                        {
+                            break;
+                        }
+                        else if (tok.try_expect('\r'))
                         {
                             state_ = state::REQUEST_LF;
                         }
@@ -358,8 +411,11 @@ namespace txl::http
                     }
                     case state::REQUEST_LF:
                     {
-                        auto res = lex.read_one('\n');
-                        if (res.complete)
+                        if (tok.empty())
+                        {
+                            break;
+                        }
+                        else if (tok.try_expect('\n'))
                         {
                             state_ = state::HEADER_KEY;
                         }
@@ -371,59 +427,58 @@ namespace txl::http
                     }
                     case state::HEADER_KEY:
                     {
-                        auto res = lex.read( lexer::is_not({' ', ':', '\r', '\n'}) );
-                        if (res.complete and lex.peek(lexer::is({'\r'})).complete)
+                        tok_buf.str("");
+                        tok.consume_until( in_set({':', '\r', '\n'}), tok_buf );
+                        stg_header().name.append(tok_buf.str());
+
+                        switch (tok.peek(-1))
                         {
-                            state_ = state::END_CR;
-                            break;
-                        }
-                        stg_header().name.append(res.lexed);
-                        if (res.complete)
-                        {
-                            state_ = state::HEADER_COL;
-                        }
-                        break;
-                    }
-                    case state::HEADER_COL:
-                    {
-                        auto res = lex.read_one(':');
-                        if (res.complete)
-                        {
-                            state_ = state::HEADER_SPACE;
-                        }
-                        else
-                        {
-                            state_ = state::PARSER_ERROR;
-                        }
-                        break;
-                    }
-                    case state::HEADER_SPACE:
-                    {
-                        auto res = lex.read_one(' ');
-                        if (res.complete)
-                        {
-                            state_ = state::HEADER_VALUE;
-                        }
-                        else
-                        {
-                            state_ = state::PARSER_ERROR;
+                            case '\r':
+                                tok.skip();
+                                state_ = state::END_CR;
+                                break;
+                            case '\n':
+                                tok.skip();
+                                state_ = state::PARSER_COMPLETE;
+                                break;
+                            case ':':
+                                tok.skip();
+                                tok.skip_while(is_char{' '});
+                                state_ = state::HEADER_VALUE;
+                                break;
+                            case -1:
+                                break;
                         }
                         break;
                     }
                     case state::HEADER_VALUE:
                     {
-                        auto res = lex.read( lexer::is_not({'\r', '\n'}) );
-                        stg_header().value.append(res.lexed);
-                        if (res.complete)
+                        tok_buf.str("");
+                        tok.consume_until( in_set({'\r', '\n'}), tok_buf );
+                        stg_header().value.append(tok_buf.str());
+                        switch (tok.peek(-1))
                         {
-                            state_ = state::HEADER_CR;
+                            case '\r':
+                                tok.skip();
+                                state_ = state::HEADER_CR;
+                                break;
+                            case '\n':
+                                tok.skip();
+                                state_ = state::HEADER_KEY;
+                                new_header_ = true;
+                                break;
+                            case -1:
+                                break;
                         }
                         break;
                     }
                     case state::HEADER_CR:
                     {
-                        auto res = lex.read_one('\r');
-                        if (res.complete)
+                        if (tok.empty())
+                        {
+                            break;
+                        }
+                        else if (tok.try_expect('\r'))
                         {
                             state_ = state::HEADER_LF;
                         }
@@ -435,8 +490,11 @@ namespace txl::http
                     }
                     case state::HEADER_LF:
                     {
-                        auto res = lex.read_one('\n');
-                        if (res.complete)
+                        if (tok.empty())
+                        {
+                            break;
+                        }
+                        else if (tok.try_expect('\n'))
                         {
                             state_ = state::HEADER_KEY;
                             new_header_ = true;
@@ -449,8 +507,11 @@ namespace txl::http
                     }
                     case state::END_CR:
                     {
-                        auto res = lex.read_one('\r');
-                        if (res.complete)
+                        if (tok.empty())
+                        {
+                            break;
+                        }
+                        else if (tok.try_expect('\r'))
                         {
                             state_ = state::END_LF;
                         }
@@ -462,9 +523,11 @@ namespace txl::http
                     }
                     case state::END_LF:
                     {
-                        auto res = lex.read_one('\n');
-                        // NOTE: cannot check `res.complete` because that expects us to not reach EOF
-                        if (res.last_match == '\n')
+                        if (tok.empty())
+                        {
+                            break;
+                        }
+                        else if (tok.try_expect('\n'))
                         {
                             state_ = state::PARSER_COMPLETE;
                         }

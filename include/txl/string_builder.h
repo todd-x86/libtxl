@@ -25,15 +25,16 @@ namespace txl
             auto size = std::strlen(s);
             if (num_used_ + size > size_)
             {
-                size_ = size_ + original_size_;
-                data_ = std::realloc(data_, size_);
+                auto new_size = size_ + size + original_size_;
+                data_ = std::realloc(data_, new_size);
+                size_ = new_size;
             }
             std::memcpy(static_cast<char *>(data_) + num_used_, s, size);
 
             num_used_ += size;
         }
 
-        auto free()
+        auto free() -> void
         {
             std::free(data_);
             data_ = nullptr;
