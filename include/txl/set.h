@@ -39,6 +39,8 @@ namespace txl
             }
         };
     public:
+        static const constexpr size_t LINEAR_SEARCH_LIMIT = 50;
+
         using const_iterator = typename Container::const_iterator;
         using value_type = typename Container::value_type;
 
@@ -51,11 +53,37 @@ namespace txl
             }
         }
 
-        auto contains(Value const & v) const -> bool
+        auto find(Value const & v) const -> const_iterator
+        {
+            if (size() <= LINEAR_SEARCH_LIMIT)
+            {
+                return linear_search(v);
+            }
+            return bisect(v);
+        }
+        
+        auto linear_search(Value const & v) const -> const_iterator
+        {
+            auto cmp = Less{};
+            return std::find_if(begin(), end(), [&](auto const & e) {
+                return not cmp(e, v) and not cmp(v, e);
+            });
+        }
+        
+        auto bisect(Value const & v) const -> const_iterator
         {
             auto it = lower_bound(v);
             auto cmp = Less{};
-            return (it != end() and not cmp(*it, v) and not cmp(v, *it));
+            if (it != end() and not cmp(*it, v) and not cmp(v, *it))
+            {
+                return it;
+            }
+            return end();
+        }
+
+        auto contains(Value const & v) const -> bool
+        {
+            return find(v) != end();
         }
         
         auto lower_bound(Value const & v) const -> const_iterator

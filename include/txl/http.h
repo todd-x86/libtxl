@@ -28,6 +28,19 @@ namespace txl::http
     {
         struct hex_transformer final
         {
+            enum state
+            {
+                S0, // <begin>
+                S1, // '%'
+                S2, // 1st digit
+                S3, // 2nd digit
+                S4, // <end>
+                S5, // <error>
+            };
+
+            int hex1_, hex2_;
+            state state_ = S0;
+
             auto hex_to_int(char c) -> int
             {
                 if (c >= '0' and c <= '9')
@@ -42,20 +55,60 @@ namespace txl::http
                 {
                     return 10 + (c - 'A');
                 }
-                throw url_decode_error{"non-hexadecimal character received"};
+                return -1;
             }
 
-            auto operator()(::txl::lexer::tokenizer & tok, std::ostringstream & dst) -> void
+            auto operator()(::txl::lexer::tokenizer & tok, std::ostringstream & dst) -> bool
             {
-                // Got '%'
-                tok.skip();
+                while (not tok.empty())
+                {
+                    switch (state_)
+                    {
+                        case S0:
+                            // Got '%'
+                            tok.skip();
+                            state_ = S1;
+                            break;
+                        case S1:
+                            hex1_ = tok.read_one(-1);
+                            if (hex1_ == -1)
+                            {
+                                return true;
+                            }
+                            state_ = S2;
+                            break;
+                        case S2:
+                            hex2_ = tok.read_one(-1);
+                            if (hex2_ == -1)
+                            {
+                                return true;
+                            }
+                            state_ = S3;
+                            break;
+                        case S3:
+                            hex1_ = hex_to_int(hex2_);
+                            hex2_ = hex_to_int(hex2_);
+                            if (hex1_ == -1 or hex2_ == -1)
+                            {
+                                state_ = S5;
+                                return false;
+                            }
+                            {
+                                char decoded = (static_cast<char>(hex1_) << 4) | static_cast<char>(hex2_);
 
-                auto hex1 = tok.read_one();
-                auto hex2 = tok.read_one();
-
-                char decoded = (hex_to_int(hex1) << 4) | hex_to_int(hex2);
-
-                dst.put(decoded);
+                                dst.put(decoded);
+                            }
+                            state_ = S4;
+                            return true;
+                        case S4:
+                            state_ = S0;
+                            return true;
+                        case S5:
+                            state_ = S0;
+                            return false;
+                    }
+                }
+                return true;
             }
         };
     }
@@ -105,10 +158,10 @@ namespace txl::http
             S4, // <error>
         };
 
-
-        state state_ = S0;
         std::ostringstream name_;
         std::ostringstream value_;
+        detail::hex_transformer hex_transform_{};
+        state state_ = S0;
 
         auto parse_state_0(::txl::lexer::tokenizer & tok)
         {
@@ -135,9 +188,9 @@ namespace txl::http
             tok.consume_while(in_range{'0', '9'} 
                             | in_range{'A', 'Z'}
                             | in_range{'a', 'z'} 
-                            | in_set{{'!', '$', '\'', '*', '-', '.', '^', '_', '`', '|', '~'}}
-                            | transform{in_set({'%'}), detail::hex_transformer{}}
-                            | transform{in_set({'+'}), [](auto & tok, auto & dst) { tok.skip(); dst.put(' '); }}
+                            | in_set{{'!', '$', '\'', '*', '-', '.', '^', '_', '`', '|', '~', '[', ']'}}
+                            | transform{is_char('%'), hex_transform_}
+                            | transform{is_char('+'), [](auto & tok, auto & dst) { tok.skip(); dst.put(' '); return true; }}
                             , dst);
         }
 
@@ -369,6 +422,7 @@ namespace txl::http
                         }
                         else
                         {
+                            tok.skip();
                             state_ = state::HTTP_VERSION;
                         }
                         break;
@@ -381,11 +435,9 @@ namespace txl::http
                         switch (tok.peek(-1))
                         {
                             case '\r':
-                                tok.skip();
                                 state_ = state::REQUEST_CR;
                                 break;
                             case '\n':
-                                tok.skip();
                                 state_ = state::REQUEST_LF;
                                 break;
                             case -1:
@@ -395,11 +447,7 @@ namespace txl::http
                     }
                     case state::REQUEST_CR:
                     {
-                        if (tok.empty())
-                        {
-                            break;
-                        }
-                        else if (tok.try_expect('\r'))
+                        if (tok.try_expect('\r'))
                         {
                             state_ = state::REQUEST_LF;
                         }
@@ -411,11 +459,7 @@ namespace txl::http
                     }
                     case state::REQUEST_LF:
                     {
-                        if (tok.empty())
-                        {
-                            break;
-                        }
-                        else if (tok.try_expect('\n'))
+                        if (tok.try_expect('\n'))
                         {
                             state_ = state::HEADER_KEY;
                         }
@@ -429,12 +473,14 @@ namespace txl::http
                     {
                         tok_buf.str("");
                         tok.consume_until( in_set({':', '\r', '\n'}), tok_buf );
-                        stg_header().name.append(tok_buf.str());
+                        if (tok_buf.tellp() != 0)
+                        {
+                            stg_header().name.append(tok_buf.str());
+                        }
 
                         switch (tok.peek(-1))
                         {
                             case '\r':
-                                tok.skip();
                                 state_ = state::END_CR;
                                 break;
                             case '\n':
@@ -459,7 +505,6 @@ namespace txl::http
                         switch (tok.peek(-1))
                         {
                             case '\r':
-                                tok.skip();
                                 state_ = state::HEADER_CR;
                                 break;
                             case '\n':
@@ -474,11 +519,7 @@ namespace txl::http
                     }
                     case state::HEADER_CR:
                     {
-                        if (tok.empty())
-                        {
-                            break;
-                        }
-                        else if (tok.try_expect('\r'))
+                        if (tok.try_expect('\r'))
                         {
                             state_ = state::HEADER_LF;
                         }
@@ -490,11 +531,7 @@ namespace txl::http
                     }
                     case state::HEADER_LF:
                     {
-                        if (tok.empty())
-                        {
-                            break;
-                        }
-                        else if (tok.try_expect('\n'))
+                        if (tok.try_expect('\n'))
                         {
                             state_ = state::HEADER_KEY;
                             new_header_ = true;
@@ -507,11 +544,7 @@ namespace txl::http
                     }
                     case state::END_CR:
                     {
-                        if (tok.empty())
-                        {
-                            break;
-                        }
-                        else if (tok.try_expect('\r'))
+                        if (tok.try_expect('\r'))
                         {
                             state_ = state::END_LF;
                         }
@@ -523,11 +556,7 @@ namespace txl::http
                     }
                     case state::END_LF:
                     {
-                        if (tok.empty())
-                        {
-                            break;
-                        }
-                        else if (tok.try_expect('\n'))
+                        if (tok.try_expect('\n'))
                         {
                             state_ = state::PARSER_COMPLETE;
                         }

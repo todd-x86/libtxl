@@ -1,8 +1,12 @@
 #pragma once
 
+// TODO: use result<> for tokenizer return types over throwing exceptions
+
+#include <txl/ref.h>
 #include <txl/set.h>
 
 #include <cstddef>
+#include <sstream>
 #include <stdexcept>
 #include <string_view>
 
@@ -90,8 +94,12 @@ namespace txl::lexer
         {
             while (not empty() and cond(data_[next_]))
             {
-                cond.process(*this, dst);
+                if (not cond.process(*this, dst))
+                {
+                    return false;
+                }
             }
+            return true;
         }
         
         template<class Tok>
@@ -108,8 +116,12 @@ namespace txl::lexer
         {
             while (not empty() and not cond(data_[next_]))
             {
-                cond.process(*this, dst);
+                if (not cond.process(*this, dst))
+                {
+                    return false;
+                }
             }
+            return true;
         }
         
         template<class Tok>
@@ -135,7 +147,9 @@ namespace txl::lexer
             if (not empty())
             {
                 ++next_;
+                return true;
             }
+            return false;
         }
     };
 
@@ -146,9 +160,15 @@ namespace txl::lexer
             return true;
         }
 
-        auto process(tokenizer & tok, std::ostringstream & dst) -> void
+        auto process(tokenizer & tok, std::ostringstream & dst) -> bool
         {
-            dst.put(tok.read_one());
+            auto ch = tok.read_one(-1);
+            if (ch == -1)
+            {
+                return false;
+            }
+            dst.put(ch);
+            return true;
         }
     };
 
@@ -170,21 +190,20 @@ namespace txl::lexer
             return t1_(ch) or t2_(ch);
         }
 
-        auto process(tokenizer & tok, std::ostringstream & dst) -> void
+        auto process(tokenizer & tok, std::ostringstream & dst) -> bool
         {
             auto ch = tok.peek(-1);
             if (ch == -1)
             {
                 // End of buffer
-                return;
+                return false;
             }
 
             if (t1_(ch))
             {
-                t1_.process(tok, dst);
-                return;
+                return t1_.process(tok, dst);
             }
-            t2_.process(tok, dst);
+            return t2_.process(tok, dst);
         }
     };
 
@@ -243,9 +262,9 @@ namespace txl::lexer
     {
     private:
         Tok tok_;
-        TransformFunc transform_;
+        ::txl::ref<TransformFunc> transform_;
     public:
-        transform(Tok && tok, TransformFunc transformer)
+        transform(Tok && tok, TransformFunc const & transformer)
             : tok_{std::move(tok)}
             , transform_{transformer}
         {
@@ -256,9 +275,9 @@ namespace txl::lexer
             return tok_(ch);
         }
 
-        auto process(tokenizer & tok, std::ostringstream & dst) -> void
+        auto process(tokenizer & tok, std::ostringstream & dst) -> bool
         {
-            transform_(tok, dst);
+            return (*transform_)(tok, dst);
         }
     };
 

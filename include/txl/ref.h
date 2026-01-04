@@ -14,6 +14,10 @@ namespace txl
             : value_(&value)
         {
         }
+        ref(Value const & value)
+            : value_(const_cast<Value *>(&value))
+        {
+        }
         ref(Value && value)
             : value_(&value)
         {
