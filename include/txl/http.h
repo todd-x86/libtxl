@@ -34,8 +34,6 @@ namespace txl::http
                 S1, // '%'
                 S2, // 1st digit
                 S3, // 2nd digit
-                S4, // <end>
-                S5, // <error>
             };
 
             int hex1_, hex2_;
@@ -86,11 +84,11 @@ namespace txl::http
                             state_ = S3;
                             break;
                         case S3:
-                            hex1_ = hex_to_int(hex2_);
+                            hex1_ = hex_to_int(hex1_);
                             hex2_ = hex_to_int(hex2_);
                             if (hex1_ == -1 or hex2_ == -1)
                             {
-                                state_ = S5;
+                                state_ = S0;
                                 return false;
                             }
                             {
@@ -98,14 +96,8 @@ namespace txl::http
 
                                 dst.put(decoded);
                             }
-                            state_ = S4;
-                            return true;
-                        case S4:
                             state_ = S0;
                             return true;
-                        case S5:
-                            state_ = S0;
-                            return false;
                     }
                 }
                 return true;
@@ -329,6 +321,7 @@ namespace txl::http
     private:
         http_request stg_;
         query_string_parser query_string_parser_;
+        detail::hex_transformer hex_transform_{};
         state state_ = state::REQUEST_TYPE;
         bool new_header_ = true;
 
@@ -394,7 +387,10 @@ namespace txl::http
                     case state::URI:
                     {
                         tok_buf.str("");
-                        tok.consume_until( in_set({' ', '\r', '\n', '?'}), tok_buf );
+                        tok.consume_while(transform{is_char('%'), hex_transform_}
+                                        | transform{is_char('+'), [](auto & tok, auto & dst) { tok.skip(); dst.put(' '); return true; }}
+                                        | is_not{in_set({' ', '\r', '\n', '?'})}
+                                        , tok_buf);
                         stg_.uri.append(tok_buf.str());
                         switch (tok.peek(-1))
                         {
@@ -567,7 +563,7 @@ namespace txl::http
                         break;
                     }
                     case state::PARSER_COMPLETE:
-                        return {};
+                        return tok.num_parsed();
                     case state::PARSER_ERROR:
                         // Failure case
                         return {};

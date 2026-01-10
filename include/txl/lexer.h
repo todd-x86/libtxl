@@ -35,6 +35,11 @@ namespace txl::lexer
         {
         }
 
+        auto num_parsed() const -> size_t
+        {
+            return next_;
+        }
+
         auto read_one() -> char
         {
             if (empty())
@@ -204,6 +209,28 @@ namespace txl::lexer
                 return t1_.process(tok, dst);
             }
             return t2_.process(tok, dst);
+        }
+    };
+    
+    template<class Tok>
+    class is_not : public token_tag
+    {
+    private:
+        Tok tok_;
+    public:
+        is_not(Tok && tok)
+            : tok_{std::move(tok)}
+        {
+        }
+
+        auto operator()(char ch) const -> bool
+        {
+            return not tok_(ch);
+        }
+
+        auto process(tokenizer & tok, std::ostringstream & dst) -> bool
+        {
+            return tok_.process(tok, dst);
         }
     };
 
