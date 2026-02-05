@@ -155,6 +155,14 @@ namespace txl
             }
         }
     public:
+        storage_union() = default;
+
+        template<class T>
+        storage_union(T && value)
+        {
+            set(std::move(value));
+        }
+
         ~storage_union()
         {
             invoke_deleter();
