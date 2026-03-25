@@ -26,7 +26,7 @@ namespace txl::detail
 }
 
 #define FUNCTION_LIKE(method_ptr) std::function<::txl::detail::remove_member_ptr_t<decltype(&method_ptr)>>
-#define CLASS_METHOD(method) [this]<class... Args>(Args && ... args) { return method(std::forward<Args>(args)...); }
+#define CLASS_METHOD(method) [this](auto && ... args) { return method(std::forward<decltype(args)>(args)...); }
 #define BIND_FEATURE(field, public_name) template<class... Args> auto public_name(Args && ... args) { \
     if constexpr (std::is_void_v<decltype(field(std::forward<Args>(args)...))>) { \
         if (field) { \
