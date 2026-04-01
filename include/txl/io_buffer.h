@@ -3,10 +3,10 @@
 #include <txl/buffer_ref.h>
 #include <txl/io.h>
 #include <txl/result.h>
-#include <txl/types.h>
 
 #include <algorithm>
 #include <cstddef>
+#include <vector>
 
 namespace txl
 {
@@ -14,7 +14,7 @@ namespace txl
                     , public writer
     {
     private:
-        byte_vector buf_{};
+        std::vector<std::byte> buf_{};
     protected:
         auto read_impl(buffer_ref dst) -> result<size_t> override
         {
@@ -28,9 +28,9 @@ namespace txl
         auto write_impl(buffer_ref src) -> result<size_t> override
         {
             buf_.reserve(buf_.capacity() + src.size());
-            auto b = buf_.end();
-            auto e = std::copy(src.begin(), src.end(), std::back_inserter(buf_));
-            return std::distance(b, e);
+            auto before = buf_.size();
+            std::copy(src.begin(), src.end(), std::back_inserter(buf_));
+            return buf_.size() - before;
         }
     };
 }

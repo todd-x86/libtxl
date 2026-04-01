@@ -1,466 +1,365 @@
 #pragma once
 
+#include <txl/io.h>
 #include <txl/buffer_ref.h>
+#include <txl/copy.h>
+#include <txl/size_policy.h>
+#include <txl/result.h>
 
-#include <string>
 #include <string_view>
-#include <algorithm>
+#include <cstdlib>
 #include <vector>
-#include <tuple>
+#include <ostream>
+#include <sstream>
 
-namespace txl
+namespace txl::csv
 {
-    class splitter
+    enum class splitter_status
+    {
+        add,
+        more_data,
+
+        delimiter,
+    };
+
+    template<class CharType = char>
+    class splitter final
     {
     private:
-        buffer_ref line_;
-        size_t size_;
-        off_t offset_;
-        char split_char_;
-    public:
-        class const_iterator
+        static constexpr const CharType QUOTE = static_cast<CharType>('"');
+
+        /**
+         * foo,bar
+         * ^  ^^  ^
+         * |  ||  |
+         * |  ||  +- EOL
+         * |  ||
+         * |  |+- data
+         * |  +-- delimiter
+         * +----- data
+         *
+         * "foo","bar"
+         * ^^  ^^^^  ^^
+         * ||  ||||  ||
+         * ||  ||||  |+- EOL
+         * ||  ||||  +-- end_quote
+         * ||  |||+----- quote_data
+         * ||  ||+------ begin_quote
+         * ||  |+------- delimiter
+         * ||  +-------- end_quote
+         * |+----------- quote_data
+         * +------------ begin_quote
+         *
+         * "fo""o","b""ar"
+         * ^^ ^^^^^^^^^^ ^^
+         * || |||||||||| ||
+         * || |||||||||| |+- EOL
+         * || |||||||||| +-- end_quote
+         * || |||||||||+---- quote_data
+         * || ||||||||+----- quote_char
+         * || |||||||+------ end_quote
+         * || ||||||+------- quote_data
+         * || |||||+-------- begin_quote
+         * || ||||+--------- delimiter
+         * || |||+---------- end_quote
+         * || ||+----------- quote_data
+         * || |+------------ quote_char
+         * || +------------- end_quote
+         * |+--------------- quote_data
+         * +---------------- begin_quote
+         *
+         */
+        enum class state
         {
-        private:
-            buffer_ref line_;
-            off_t offset_;
-            size_t max_length_;
-            size_t length_;
-            char split_char_;
-
-            void advance()
-            {
-                offset_ += length_;
-                // Skip implicit comma
-                if (offset_ < max_length_)
-                {
-                    ++offset_;
-                }
-                length_ = 0;
-            }
-
-            size_t pos() const
-            {
-                return offset_ + length_;
-            }
-
-            void seek_next()
-            {
-                while (pos() < max_length_ && (*line_)[pos()] != split_char_)
-                {
-                    ++length_;
-                }
-            }
-
-            void move(const_iterator && it)
-            {
-                std::swap(line_, it.line_);
-                std::swap(offset_, it.offset_);
-                std::swap(max_length_, it.max_length_);
-                std::swap(length_, it.length_);
-                std::swap(split_char_, it.split_char_);
-            }
-        public:
-            const_iterator()
-                : line_(nullptr)
-                , offset_(0)
-                , max_length_(0)
-                , length_(0)
-                , split_char_(',')
-            {
-            }
-
-            const_iterator(StringType const * data, off_t offset, size_t max_length)
-                : const_iterator(data, offset, max_length, ',')
-            {
-            }
-
-            const_iterator(StringType const * data, off_t offset, size_t max_length, char split_char)
-                : line_(data)
-                , offset_(offset)
-                , max_length_(max_length)
-                , length_(0)
-                , split_char_(split_char)
-            {
-                // Find next comma or EOL
-                seek_next();
-            }
-
-            const_iterator(const_iterator const & it)
-                : line_(it.line_)
-                , offset_(it.offset_)
-                , max_length_(it.max_length_)
-                , length_(it.length_)
-                , split_char_(it.split_char_)
-            {
-            }
-            
-            const_iterator(const_iterator && it)
-                : const_iterator()
-            {
-                move(std::move(it));
-            }
-
-            buffer_ref operator*() const
-            {
-                return StringType(*line_, offset_, length_);
-            }
-
-            const_iterator & operator++()
-            {
-                advance();
-                seek_next();
-                return *this;
-            }
-
-            const_iterator & operator++(int distance)
-            {
-                ++(*this);
-                return *this;
-            }
-
-            const_iterator & operator=(const_iterator const & it)
-            {
-                if (this != std::addressof(it))
-                {
-                    line_ = it.line_;
-                    offset_ = it.offset_;
-                    max_length_ = it.max_length_;
-                    length_ = it.length_;
-                    split_char_ = it.split_char_;
-                }
-                return *this;
-            }
-
-            const_iterator & operator=(const_iterator && it)
-            {
-                if (this != std::addressof(it))
-                {
-                    move(std::move(it));
-                }
-                return *this;
-            }
-
-            bool operator==(const_iterator const & it) const
-            {
-                // NOTE: Avoid checking string contents to make this faster 
-                //    -- comparing iterators from different strings is just not right
-                return offset_ == it.offset_ 
-                    && max_length_ == it.max_length_ 
-                    && length_ == it.length_;
-            }
-
-            bool operator!=(const_iterator const & it) const
-            {
-                return not (*this == it);
-            }
-
-            off_t offset() const
-            {
-                return offset_;
-            }
-
-            size_t length() const
-            {
-                return length_;
-            }
+            begin, // (beginning)
+            data, // -> delimiter | EOL
+            begin_quote, // -> quote_data | end_quote
+            quote_data, // -> end_quote
+            end_quote, // -> delimiter | quote_char | EOL
+            delimiter, // -> begin_quote | data | EOL
         };
 
-        splitter(StringType data, size_t size)
-            : splitter(data, 0, size)
+        CharType delim_;
+        state state_ = state::begin;
+    public:
+        splitter(CharType delimiter = static_cast<CharType>(','))
+            : delim_{delimiter}
         {
         }
 
-        splitter(StringType data, off_t offset, size_t size)
-            : splitter(data, offset, size, ',')
+        auto reset() -> void
         {
+            state_ = state::begin;
         }
 
-        splitter(StringType data, off_t offset, size_t size, char split_char)
-            : line_(data)
-            , size_(size)
-            , offset_(offset)
-            , split_char_(split_char)
+        auto push(CharType ch) -> splitter_status
         {
-        }
-
-        splitter(splitter const & splitter)
-            : splitter(splitter.line_, splitter.offset_, splitter.size_, splitter.split_char_)
-        {
-        }
-
-        splitter(splitter && splitter)
-            : line_(std::move(splitter.line_))
-            , size_(0)
-            , offset_(0)
-            , split_char_(',')
-        {
-            std::swap(size_, splitter.size_);
-            std::swap(offset_, splitter.offset_);
-            std::swap(split_char_, splitter.split_char_);
-        }
-
-        void reset(StringType data, size_t size)
-        {
-            reset(data, 0, size);
-        }
-
-        void reset(StringType data, off_t offset, size_t size)
-        {
-            reset(data, offset, size, ',');
-        }
-
-        void reset(StringType data, off_t offset, size_t size, char split_char)
-        {
-            line_ = data;
-            size_ = size;
-            offset_ = offset;
-            split_char_ = split_char;
-        }
-
-        const_iterator begin() const
-        {
-            return cbegin();
-        }
-
-        const_iterator end() const
-        {
-            return cend();
-        }
-
-        const_iterator cbegin() const
-        {
-            return const_iterator(std::addressof(line_), offset_, size_, split_char_);
-        }
-
-        const_iterator cend() const
-        {
-            return const_iterator(std::addressof(line_), offset_ + size_, size_, split_char_);
-        }
-
-        splitter & operator=(splitter const & splitter)
-        {
-            if (this != std::addressof(splitter))
+            switch (state_)
             {
-                reset(splitter.line_, splitter.offset_, splitter.size_, splitter.split_char_);
+                case state::begin:
+                    if (ch == QUOTE)
+                    {
+                        // Quoted data
+                        state_ = state::quote_data;
+                        return splitter_status::add;
+                    }
+                    if (ch == delim_)
+                    {
+                        // No data
+                        state_ = state::delimiter;
+                        return splitter_status::delimiter;
+                    }
+
+                    // Regular data
+                    state_ = state::data;
+                    return splitter_status::add;
+                case state::data:
+                    if (ch != delim_)
+                    {
+                        return splitter_status::add;
+                    }
+                    state_ = state::delimiter;
+                    return splitter_status::delimiter;
+                case state::begin_quote:
+                    if (ch != QUOTE)
+                    {
+                        state_ = state::quote_data;
+                        return splitter_status::add;
+                    }
+                    state_ = state::end_quote;
+                    return splitter_status::more_data;
+                case state::quote_data:
+                    if (ch != QUOTE)
+                    {
+                        return splitter_status::add;
+                    }
+                    state_ = state::end_quote;
+                    return splitter_status::more_data;
+                case state::end_quote:
+                    if (ch == QUOTE)
+                    {
+                        // 2nd quote
+                        state_ = state::quote_data;
+                        return splitter_status::add;
+                    }
+                    if (ch == delim_)
+                    {
+                        state_ = state::delimiter;
+                        return splitter_status::delimiter;
+                    }
+
+                    // Bad state, but we don't have an easy way to throw, so let's just keep moving along
+                    state_ = state::data;
+                    return splitter_status::add;
+                case state::delimiter:
+                    if (ch == QUOTE)
+                    {
+                        state_ = state::begin_quote;
+                        return splitter_status::more_data;
+                    }
+                    state_ = state::data;
+                    return splitter_status::add;
             }
-            return *this;
+        }
+    };
+    
+    enum class split_status
+    {
+        delimiter,
+        end_of_line,
+        empty,
+    };    
+
+    template<class CharType = char>
+    class string_view_splitter final
+    {
+    public:
+        using string_view = std::basic_string_view<CharType>;
+    private:
+        splitter<CharType> sp_;
+        string_view str_;
+    public:
+        string_view_splitter(string_view s, CharType delim)
+            : sp_{delim}
+            , str_{s}
+        {
         }
 
-        splitter & operator=(splitter && splitter)
+        auto reset(string_view s)
         {
-            if (this != std::addressof(splitter))
+            str_ = s;
+            sp_.reset();
+        }
+        
+        template<class CharFunc, class = std::enable_if_t<std::is_invocable_v<CharFunc, CharType>>>
+        auto next(CharFunc && on_char) -> split_status
+        {
+            if (empty())
             {
-                line_ = std::move(splitter.line_);
-                std::swap(offset_, splitter.offset_);
-                std::swap(size_, splitter.size_);
-                std::swap(split_char_, splitter.split_char_);
+                return split_status::empty;
             }
-            return *this;
+
+            auto has_delimiter = false;
+            auto it = str_.begin();
+            for (; it != str_.end() and not has_delimiter; ++it)
+            {
+                switch (sp_.push(*it))
+                {
+                    case splitter_status::add:
+                        on_char(*it);
+                        break;
+                    case splitter_status::more_data:
+                        // No-op here
+                        break;
+                    case splitter_status::delimiter:
+                        has_delimiter = true;
+                        break;
+                }
+            }
+            str_ = str_.substr(std::distance(str_.begin(), it));
+            if (has_delimiter)
+            {
+                return split_status::delimiter;
+            }
+            return split_status::end_of_line;
+        }
+
+        auto next(std::basic_ostream<CharType> & dst) -> split_status
+        {
+            return next([&](auto ch) { dst.put(ch); });
+        }
+
+        auto next(std::vector<CharType> & dst) -> split_status
+        {
+            return next([&](auto ch) { dst.push_back(ch); });
+        }
+
+        auto empty() const -> bool
+        {
+            return str_.empty();
         }
     };
 
-    class row
+    template<class CharType = char, class RowFunc>
+    auto parse_line(::txl::reader & src, RowFunc && dst) -> ::txl::result<size_t>
+    {
+        splitter<CharType> sp{};
+        std::ostringstream buf{};
+
+        // Keep the input buffer small by pushing directly to a lambda
+        auto wr = ::txl::lambda_writer{[&](::txl::buffer_ref src) {
+            for (auto ch : src.to_string_view<CharType>())
+            {
+                switch (sp.push(ch))
+                {
+                    case splitter_status::add:
+                        buf.put(ch);
+                        break;
+                    case splitter_status::more_data:
+                        break;
+                    case splitter_status::delimiter:
+                        // Copy only when a delimiter is reached
+                        dst(buf.str());
+                        buf.str("");
+                        break;
+                }
+            }
+        }};
+
+        auto res = ::txl::copy_until(src, wr, static_cast<CharType>('\n'));
+        // Because we've been copying when we reach a delimiter, we need to copy the last column, reached by EOL
+        if (buf.tellp() != 0)
+        {
+            dst(buf.str());
+        }
+        return res;
+    }
+
+    template<class CharType>
+    using row = std::vector<std::basic_string<CharType>>;
+    
+    template<class CharType>
+    class document final
     {
     private:
-        using segment_list = std::vector<std::pair<OffsetType, LengthType>>;
-        using segment_iterator = typename segment_list::const_iterator;
-        StringType line_;
-        segment_list segments_;
-
-        void split(OffsetType offset, LengthType length)
-        {
-            auto splitter = splitter<StringType>(line_, offset, length);
-            for (auto it = splitter.begin(); it != splitter.end(); ++it)
-            {
-                segments_.emplace_back(it.offset(), it.length());
-            }
-        }
+        std::vector<row<CharType>> rows_;
     public:
-        class const_iterator
+        auto operator[](size_t index) -> row<CharType> &
         {
-        private:
-            StringType const * line_;
-            segment_iterator curr_;
-            segment_iterator end_;
-
-            void move(const_iterator && it)
-            {
-                std::swap(line_, it.line_);
-                std::swap(curr_, it.curr_);
-                std::swap(end_, it.end_);
-            }
-        public:
-            const_iterator()
-                : line_(nullptr)
-                , curr_()
-                , end_()
-            {
-            }
-
-            const_iterator(StringType const * line, segment_iterator offset, segment_iterator end)
-                : line_(line)
-                , curr_(offset)
-                , end_(end)
-            {
-            }
-
-            const_iterator(const_iterator const & it)
-                : line_(it.line_)
-                , curr_(it.curr_)
-                , end_(it.end_)
-            {
-            }
-
-            const_iterator(const_iterator && it)
-                : const_iterator()
-            {
-                move(std::move(it));
-            }
-
-            StringType operator*() const
-            {
-                OffsetType offset;
-                LengthType length;
-                std::tie(offset, length) = *curr_;
-                return StringType(*line_, offset, length);
-            }
-
-            const_iterator & operator++()
-            {
-                ++curr_;
-                return *this;
-            }
-            
-            const_iterator & operator++(int distance)
-            {
-                ++(*this);
-                return *this;
-            }
-
-            const_iterator & operator=(const_iterator const & it)
-            {
-                if (this != std::addressof(it))
-                {
-                    line_ = it.line_;
-                    curr_ = it.curr_;
-                    end_ = it.end_;
-                }
-                return *this;
-            }
-
-            const_iterator & operator=(const_iterator && it)
-            {
-                if (this != std::addressof(it))
-                {
-                    move(std::move(it));
-                }
-                return *this;
-            }
-
-            bool operator==(const_iterator const & it) const
-            {
-                // NOTE: Rely on vector iterator comparison (memory address)
-                return curr_ == it.curr_;
-            }
-
-            bool operator!=(const_iterator const & it) const
-            {
-                return not (*this == it);
-            }
-        };
-
-        row(StringType line, LengthType length)
-            : row(line, 0, length)
+            return rows_[index];
+        }
+        
+        auto operator[](size_t index) const -> row<CharType> const &
         {
+            return rows_[index];
         }
 
-        row(StringType line, OffsetType offset, LengthType length)
-            : line_(line)
+        auto clear() -> void
         {
-            split(offset, length);
+            rows_.clear();
         }
 
-        row(row const & row)
-            : line_(row.line_)
-            , segments_(row.segments_)
+        auto emplace(size_t index, row<CharType> && r) -> void
         {
+            rows_.emplace(std::next(rows_.begin(), index), std::move(r));
+        }
+        
+        auto insert(size_t index, row<CharType> const & r) -> void
+        {
+            rows_.insert(std::next(rows_.begin(), index), r);
         }
 
-        row(row && row)
-            : line_(std::move(row.line_))
-            , segments_(std::move(row.segments_))
+        auto erase(size_t index) -> void
         {
+            rows_.erase(std::next(rows_.begin(), index));
         }
 
-        void reset(StringType line, LengthType length)
+        auto add() -> row<CharType> &
         {
-            reset(line, 0, length);
+            rows_.emplace_back();
+            return rows_.last();
         }
 
-        void reset(StringType line, OffsetType offset, LengthType length)
+        auto add(row<CharType> && r) -> row<CharType> &
         {
-            segments_.clear();
-            line_ = line;
-
-            split(offset, length);
+            rows_.emplace_back(std::move(r));
+            return rows_.last();
         }
 
-        StringType operator[](int index) const
+        auto add(row<CharType> const & r) -> row<CharType> &
         {
-            OffsetType offset;
-            LengthType length;
-            std::tie(offset, length) = segments_[index];
-            return StringType(line_, offset, length);
+            rows_.push_back(r);
+            return rows_.last();
         }
 
-        size_t length() const
+        auto size() const -> size_t
         {
-            return segments_.size();
-        }
-
-        size_t size() const
-        {
-            return length();
-        }
-
-        const_iterator cbegin() const
-        {
-            return const_iterator(std::addressof(line_), segments_.cbegin(), segments_.cend());
-        }
-
-        const_iterator cend() const
-        {
-            return const_iterator(std::addressof(line_), segments_.cend(), segments_.cend());
-        }
-
-        const_iterator begin() const
-        {
-            return cbegin();
-        }
-
-        const_iterator end() const
-        {
-            return cend();
-        }
-
-        row & operator=(row const & row)
-        {
-            if (this != std::addressof(row))
-            {
-                line_ = row.line_;
-                segments_ = row.segments_;
-            }
-            return *this;
-        }
-
-        row & operator=(row && row)
-        {
-            if (this != std::addressof(row))
-            {
-                line_ = std::move(row.line_);
-                segments_ = std::move(segments_);
-            }
-            return *this;
+            return rows_.size();
         }
     };
+
+    template<class CharType = char>
+    auto parse_document(::txl::reader & rd, document<CharType> & dst) -> ::txl::result<size_t>
+    {
+        size_t bytes_read = 0;
+        while (true)
+        {
+            auto curr_row = row<CharType>{};
+            auto res = parse_line(rd, [&](std::basic_string<CharType> && col) {
+                curr_row.emplace_back(std::move(col));
+            });
+
+            if (not res)
+            {
+                return res.error();
+            }
+            if (*res == 0)
+            {
+                return bytes_read;
+            }
+            bytes_read += *res;
+
+            dst.add(std::move(curr_row));
+        }
+    }
 }

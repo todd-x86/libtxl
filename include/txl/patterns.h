@@ -66,7 +66,7 @@ namespace txl
 
         auto operator!=(virtual_iterator const & it) const -> bool
         {
-            return !(*this == it);
+            return not (*this == it);
         }
 
         auto operator++() -> virtual_iterator &
@@ -132,7 +132,7 @@ namespace txl
 
             auto operator!=(const_iterator const & it) const -> bool
             {
-                return !(*this == it);
+                return not (*this == it);
             }
 
             auto operator++() -> const_iterator &

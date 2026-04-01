@@ -217,7 +217,12 @@ namespace txl
             return *std::next(begin(), index);
         }
 
-        auto to_string_view() const -> std::string_view { return {static_cast<char const *>(data()), size()}; }
+        template<class CharType = char>
+        auto to_string_view() const -> std::basic_string_view<CharType>
+        {
+            // NOTE: if size() isn't divisible by CharType, ROUND DOWN! DO NOT READ BEYOND IT!
+            return {static_cast<CharType const *>(data()), (size() / sizeof(CharType))};
+        }
         
         template<class T>
         auto to_alias(size_t byte_offset = 0) -> T *

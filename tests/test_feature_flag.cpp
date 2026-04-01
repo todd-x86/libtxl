@@ -3,6 +3,11 @@
 #include <sstream>
 #include <string>
 
+#define BEGIN_FEATURE_VERSION() auto set_version(int ver) { switch (ver) { case 0:
+#define FEATURE_VERSION(v) break; case v:
+#define DEFAULT_VERSION() break; default:
+#define END_FEATURE_VERSION() } }
+
 class feature_broker
 {
 protected:
@@ -43,7 +48,16 @@ public:
     {
     }
 
-    auto set_version(int ver) -> void
+    BEGIN_FEATURE_VERSION()
+        FEATURE_VERSION(2)
+            curr_ = CLASS_METHOD(new_feature);
+            curr_v_ = CLASS_METHOD(new_void_feature);
+        DEFAULT_VERSION()
+            curr_ = CLASS_METHOD(default_feature);
+            curr_v_ = CLASS_METHOD(default_void_feature);
+    END_FEATURE_VERSION()
+
+    /*auto set_version(int ver) -> void
     {
         if (ver == 2)
         {
@@ -55,7 +69,7 @@ public:
             curr_ = CLASS_METHOD(default_feature);
             curr_v_ = CLASS_METHOD(default_void_feature);
         }
-    }
+    }*/
 
     auto num() const -> int { return num_; }
     auto void_feature_called() const -> int { return void_feature_called_; }

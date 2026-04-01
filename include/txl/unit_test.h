@@ -84,14 +84,17 @@ namespace txl
         struct test_printer final
         {
             T const & value_;
+            bool detail_ = false;
 
-            test_printer(T const & value)
+            test_printer(T const & value, bool detailed = false)
                 : value_{value}
+                , detail_{detailed}
             {
             }
         };
 
         std::ostringstream error_buf_;
+        bool detailed_prints_ = false;
 
         struct assertion_error final : std::runtime_error
         {
@@ -118,6 +121,11 @@ namespace txl
         }
         virtual void _test() = 0;
 
+        auto set_detailed_printing(bool enabled) -> void
+        {
+            detailed_prints_ = enabled;
+        }
+
         auto assert(bool value, std::string_view custom_message = "assert") -> void
         {
             assert_equal(true, value, custom_message);
@@ -138,7 +146,7 @@ namespace txl
         {
             if (not (static_cast<ExpectedValue const &>(actual) < expected))
             {
-                error_buf_ << custom_message << ": " << test_printer<ActualValue>{actual} << " (actual) >= " << test_printer<ExpectedValue>{expected} << " (expected)";
+                error_buf_ << custom_message << ": " << test_printer<ActualValue>{actual, detailed_prints_} << " (actual) >= " << test_printer<ExpectedValue>{expected, detailed_prints_} << " (expected)";
                 throw assertion_error("assertion failed");
             }
         }
@@ -148,7 +156,7 @@ namespace txl
         {
             if (not (static_cast<ExpectedValue const &>(actual) <= expected))
             {
-                error_buf_ << custom_message << ": " << test_printer<ActualValue>{actual} << " (actual) > " << test_printer<ExpectedValue>{expected} << " (expected)";
+                error_buf_ << custom_message << ": " << test_printer<ActualValue>{actual, detailed_prints_} << " (actual) > " << test_printer<ExpectedValue>{expected, detailed_prints_} << " (expected)";
                 throw assertion_error("assertion failed");
             }
         }
@@ -158,7 +166,7 @@ namespace txl
         {
             if (not (static_cast<ExpectedValue const &>(actual) > expected))
             {
-                error_buf_ << custom_message << ": " << test_printer<ActualValue>{actual} << " (actual) <= " << test_printer<ExpectedValue>{expected} << " (expected)";
+                error_buf_ << custom_message << ": " << test_printer<ActualValue>{actual, detailed_prints_} << " (actual) <= " << test_printer<ExpectedValue>{expected, detailed_prints_} << " (expected)";
                 throw assertion_error("assertion failed");
             }
         }
@@ -168,7 +176,7 @@ namespace txl
         {
             if (not (static_cast<ExpectedValue const &>(actual) >= expected))
             {
-                error_buf_ << custom_message << ": " << test_printer<ActualValue>{actual} << " (actual) < " << test_printer<ExpectedValue>{expected} << " (expected)";
+                error_buf_ << custom_message << ": " << test_printer<ActualValue>{actual, detailed_prints_} << " (actual) < " << test_printer<ExpectedValue>{expected, detailed_prints_} << " (expected)";
                 throw assertion_error("assertion failed");
             }
         }
@@ -178,7 +186,7 @@ namespace txl
         {
             if (not (expected == static_cast<ExpectedValue const &>(actual)))
             {
-                error_buf_ << custom_message << ": " << test_printer<ExpectedValue>{expected} << " (expected) != " << test_printer<ActualValue>{actual} << " (actual)";
+                error_buf_ << custom_message << ": " << test_printer<ExpectedValue>{expected, detailed_prints_} << " (expected) != " << test_printer<ActualValue>{actual, detailed_prints_} << " (actual)";
                 throw assertion_error("assertion failed");
             }
         }
@@ -188,7 +196,7 @@ namespace txl
         {
             if ((expected == static_cast<ExpectedValue const &>(actual)))
             {
-                error_buf_ << custom_message << ": " << test_printer<ExpectedValue>{expected} << " (expected) == " << test_printer<ActualValue>{actual} << " (actual)";
+                error_buf_ << custom_message << ": " << test_printer<ExpectedValue>{expected, detailed_prints_} << " (expected) == " << test_printer<ActualValue>{actual, detailed_prints_} << " (actual)";
                 throw assertion_error("assertion failed");
             }
         }
@@ -278,7 +286,7 @@ namespace txl
             {
                 os << ", ";
             }
-            os << unit_test::test_printer<T>(item);
+            os << unit_test::test_printer<T>(item, value.detail_);
             comma = true;
         }
         os << "}";
@@ -288,13 +296,39 @@ namespace txl
     template<class T1, class T2>
     inline auto operator<<(std::ostream & os, unit_test::test_printer<std::pair<T1, T2>> const & value) -> std::ostream &
     {
-        os << "{" << unit_test::test_printer<T1>{value.value_.first} << ", " << unit_test::test_printer<T2>{value.value_.second} << "}";
+        os << "{" << unit_test::test_printer<T1>{value.value_.first, value.detail_} << ", " << unit_test::test_printer<T2>{value.value_.second, value.detail_} << "}";
         return os;
     }
     
     inline auto operator<<(std::ostream & os, unit_test::test_printer<bool> const & value) -> std::ostream &
     {
         os << std::boolalpha << value.value_;
+        return os;
+    }
+
+    inline auto operator<<(std::ostream & os, unit_test::test_printer<std::string> const & value) -> std::ostream &
+    {
+        if (value.detail_)
+        {
+            os << '"' << value.value_ << "\" (" << value.value_.size() << " bytes)";
+        }
+        else
+        {
+            os << value.value_;
+        }
+        return os;
+    }
+    
+    inline auto operator<<(std::ostream & os, unit_test::test_printer<std::string_view> const & value) -> std::ostream &
+    {
+        if (value.detail_)
+        {
+            os << '"' << value.value_ << "\" (" << value.value_.size() << " bytes)";
+        }
+        else
+        {
+            os << value.value_;
+        }
         return os;
     }
 

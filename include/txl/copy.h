@@ -63,4 +63,35 @@ namespace txl
     {
         return copy(src, dst, copy_buf, exactly{copy_buf.size()});
     }
+    
+    template<class CharType = char>
+    auto copy_until(reader & src, writer & dst, CharType ch) -> result<size_t>
+    {
+        CharType buf;
+        auto ch_buf = buffer_ref::cast(buf);
+        size_t total_read = 0;
+        while (true)
+        {
+            auto buf_read = src.read(ch_buf);
+            if (not buf_read)
+            {
+                return buf_read.error();
+            }
+            total_read += buf_read->size();
+           
+            // Stop if empty or buffer contains terminus
+            if (buf_read->empty() or buf == ch)
+            {
+                break;
+            }
+
+            auto written = dst.write(*buf_read);
+            if (not written)
+            {
+                return written.error();
+            }
+        }
+
+        return total_read;
+    }
 }

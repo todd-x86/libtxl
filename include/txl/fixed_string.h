@@ -76,7 +76,7 @@ namespace txl
         template<size_t OtherSize>
         auto operator==(fixed_string_base<OtherSize, Char> const & str) const -> bool
         {
-            return to_string_view() == str.to_string_view();
+            return str.size() == size() and to_string_view() == str.to_string_view();
         }
         
         template<size_t OtherSize>
@@ -87,7 +87,7 @@ namespace txl
 
         auto operator==(std::basic_string_view<Char> str) const -> bool
         {
-            return str == to_string_view();
+            return str.size() == size() and str == to_string_view();
         }
         
         auto operator!=(std::basic_string_view<Char> str) const -> bool

@@ -55,4 +55,22 @@ namespace txl
             return buf.slice(0, *bytes_written);
         }
     };
+
+    template<class LambdaFunc>
+    class lambda_writer : public writer
+    {
+    private:
+        LambdaFunc on_data_;
+    protected:
+        auto write_impl(buffer_ref buf) -> result<size_t> override
+        {
+            on_data_(buf);
+            return buf.size();
+        }
+    public:
+        lambda_writer(LambdaFunc && lambda)
+            : on_data_{std::move(lambda)}
+        {
+        }
+    };
 }

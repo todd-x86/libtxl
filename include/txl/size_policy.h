@@ -1,6 +1,8 @@
 #pragma once
 
 #include <txl/buffer_ref.h>
+#include <txl/find.h>
+
 #include <algorithm>
 #include <cstddef>
 
@@ -62,24 +64,22 @@ namespace txl
     class until : public size_policy
     {
     private:
-        buffer_ref match_;
-        //size_t match_idx_ = 0;
-        bool matched_ = false;
+        stream_find matcher_;
     public:
         until(buffer_ref match, size_t buffer_size = 1024)
             : size_policy(buffer_size)
-            , match_{match}
+            , matcher_{match}
         {
         }
         
         auto is_complete() const -> bool
         {
-            return matched_;
+            return matcher_.is_matched();
         }
 
         auto process(buffer_ref requested, buffer_ref actual) -> void
         {
-            
+            matcher_.process(actual);
         }
     };
 
