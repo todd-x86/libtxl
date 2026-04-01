@@ -20,6 +20,7 @@ namespace txl::csv
         more_data,
 
         delimiter,
+        no_op,
     };
 
     template<class CharType = char>
@@ -160,6 +161,7 @@ namespace txl::csv
                     state_ = state::data;
                     return splitter_status::add;
             }
+            return splitter_status::no_op;
         }
     };
     
@@ -208,11 +210,12 @@ namespace txl::csv
                     case splitter_status::add:
                         on_char(*it);
                         break;
-                    case splitter_status::more_data:
-                        // No-op here
-                        break;
                     case splitter_status::delimiter:
                         has_delimiter = true;
+                        break;
+                    case splitter_status::more_data:
+                    default:
+                        // No-op here
                         break;
                 }
             }
@@ -255,12 +258,13 @@ namespace txl::csv
                     case splitter_status::add:
                         buf.put(ch);
                         break;
-                    case splitter_status::more_data:
-                        break;
                     case splitter_status::delimiter:
                         // Copy only when a delimiter is reached
                         dst(buf.str());
                         buf.str("");
+                        break;
+                    default:
+                    case splitter_status::more_data:
                         break;
                 }
             }
