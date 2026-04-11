@@ -9,10 +9,10 @@ namespace txl
     class opaque_ptr
     {
     private:
-        static constexpr uint8_t UNIQUE_PTR_MASK = 1 << 0,
-                                 SHARED_PTR_MASK = 1 << 1,
-                                 SMART_PTR_MASK = UNIQUE_PTR_MASK | SHARED_PTR_MASK;
-        static constexpr uint64_t PTR_MASK = ~static_cast<uint64_t>(SMART_PTR_MASK);
+        static constexpr uintptr_t UNIQUE_PTR_MASK = 1 << 0,
+                                   SHARED_PTR_MASK = 1 << 1,
+                                   SMART_PTR_MASK = UNIQUE_PTR_MASK | SHARED_PTR_MASK,
+                                   PTR_MASK = ~SMART_PTR_MASK;
         union
         {
             std::unique_ptr<Value> uptr_;
@@ -20,33 +20,26 @@ namespace txl
         };
         Value * ptr_ = nullptr;
 
-        uint8_t * get_bitmask_ptr()
+        auto get_bitmask_ptr() const -> uintptr_t
         {
-            return reinterpret_cast<uint8_t *>(&ptr_);
+            return reinterpret_cast<uintptr_t>(ptr_);
         }
         
-        uint8_t const * get_bitmask_ptr() const
-        {
-            return reinterpret_cast<uint8_t const *>(&ptr_);
-        }
-
         Value * get_pointer() const
         {
-            Value * res = ptr_;
-            *reinterpret_cast<uint8_t *>(&res) &= PTR_MASK;
-            return res;
+            return reinterpret_cast<Value *>(reinterpret_cast<uintptr_t>(ptr_) & PTR_MASK);
         }
         
-        void apply_mask(uint8_t mask)
+        void apply_mask(uintptr_t mask)
         {
             // Confirm mask isn't corrupting memory
-            assert((*get_bitmask_ptr() & mask) == 0);
-            *get_bitmask_ptr() &= PTR_MASK;
-            *get_bitmask_ptr() |= mask;
+            assert((get_bitmask_ptr() & mask) == 0);
+            ptr_ = reinterpret_cast<Value *>(get_bitmask_ptr() & PTR_MASK);
+            ptr_ = reinterpret_cast<Value *>(get_bitmask_ptr() | mask);
         }
 
-        inline bool is_unique_ptr() const { return (*get_bitmask_ptr() & UNIQUE_PTR_MASK) != 0; }
-        inline bool is_shared_ptr() const { return (*get_bitmask_ptr() & SHARED_PTR_MASK) != 0; }
+        inline bool is_unique_ptr() const { return (get_bitmask_ptr() & UNIQUE_PTR_MASK) != 0; }
+        inline bool is_shared_ptr() const { return (get_bitmask_ptr() & SHARED_PTR_MASK) != 0; }
     public:
         opaque_ptr() = default;
         opaque_ptr(std::unique_ptr<Value> && p)

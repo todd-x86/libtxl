@@ -6,10 +6,13 @@
 #include <txl/size_policy.h>
 #include <txl/result.h>
 
+#include <initializer_list>
+#include <string>
 #include <string_view>
 #include <cstdlib>
 #include <vector>
 #include <ostream>
+#include <stdexcept>
 #include <sstream>
 
 namespace txl::csv
@@ -279,23 +282,81 @@ namespace txl::csv
         return res;
     }
 
-    template<class CharType>
+    template<class CharType = char>
     using row = std::vector<std::basic_string<CharType>>;
+
+    template<class CharType = char>
+    class row_view final
+    {
+    private:
+        row<CharType> const & row_;
+        row<CharType> const * header_ = nullptr;
+    public:
+        row_view(row<CharType> const & row_data)
+            : row_{row_data}
+        {
+        }
+        
+        row_view(row<CharType> const & row_data, row<CharType> const & header)
+            : row_{row_data}
+            , header_{&header}
+        {
+        }
+
+        auto data() const -> row<CharType> const & { return row_; }
+
+        auto size() const { return row_.size(); }
+
+        auto operator[](size_t index) const -> std::basic_string<CharType> const &
+        {
+            return row_[index];
+        }
+
+        auto operator[](std::basic_string<CharType> const & key) const -> std::basic_string<CharType> const &
+        {
+            if (not header_)
+            {
+                throw std::runtime_error{"no header row specified"};
+            }
+            auto loc = std::find(header_->begin(), header_->end(), key);
+            if (loc == header_->end())
+            {
+                throw std::runtime_error{"key not found"};
+            }
+            auto idx = static_cast<size_t>(std::distance(header_->begin(), loc));
+            if (idx >= row_.size())
+            {
+                throw std::runtime_error{"index out-of-bounds"};
+            }
+            return (*this)[idx];
+        }
+    };
     
-    template<class CharType>
+    template<class CharType = char>
     class document final
     {
     private:
         std::vector<row<CharType>> rows_;
+        bool use_header_;
     public:
-        auto operator[](size_t index) -> row<CharType> &
+        document(bool use_header = false)
+            : use_header_{use_header}
         {
-            return rows_[index];
         }
-        
-        auto operator[](size_t index) const -> row<CharType> const &
+
+        document(std::initializer_list<row<CharType>> && rows, bool use_header = false)
+            : rows_{std::move(rows)}
+            , use_header_{use_header}
         {
-            return rows_[index];
+        }
+
+        auto operator[](size_t index) const -> row_view<CharType>
+        {
+            if (use_header_)
+            {
+                return row_view<CharType>{rows_[index+1], rows_[0]};
+            }
+            return row_view<CharType>{rows_[index]};
         }
 
         auto clear() -> void
@@ -318,26 +379,22 @@ namespace txl::csv
             rows_.erase(std::next(rows_.begin(), index));
         }
 
-        auto add() -> row<CharType> &
-        {
-            rows_.emplace_back();
-            return rows_.last();
-        }
-
-        auto add(row<CharType> && r) -> row<CharType> &
+        auto add(row<CharType> && r)
         {
             rows_.emplace_back(std::move(r));
-            return rows_.last();
         }
 
-        auto add(row<CharType> const & r) -> row<CharType> &
+        auto add(row<CharType> const & r)
         {
             rows_.push_back(r);
-            return rows_.last();
         }
 
         auto size() const -> size_t
         {
+            if (use_header_)
+            {
+                return rows_.size() - 1;
+            }
             return rows_.size();
         }
     };
