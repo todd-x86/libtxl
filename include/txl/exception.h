@@ -5,6 +5,11 @@
 
 namespace txl
 {
+    struct debug_info
+    {
+        virtual auto on_ 
+    };
+
     struct debug_info_data
     {
         virtual auto get_debug_info(debug_info & di) const -> bool

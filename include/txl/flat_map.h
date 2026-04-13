@@ -142,7 +142,10 @@ namespace txl
 		return nullptr;
 	  }
 	public:
-	  auto end() const -> bucket const *
+	  using key_type = K;
+      using mapped_type = V;
+
+      auto end() const -> bucket const *
 	  {
 		return nullptr;
 	  }
