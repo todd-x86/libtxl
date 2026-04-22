@@ -26,16 +26,21 @@ namespace txl
         };
 
         event_timer() = default;
+        
+        event_timer(timer_type tt)
+        {
+            open(tt).or_throw();
+        }
 
         event_timer(std::chrono::system_clock::time_point tp)
+            : event_timer(system_clock)
         {
-            open(system_clock).or_throw();
             set_time(tp).or_throw();
         }
 
         event_timer(std::chrono::steady_clock::time_point tp)
+            : event_timer(steady_clock)
         {
-            open(steady_clock).or_throw();
             set_time(tp).or_throw();
         }
 

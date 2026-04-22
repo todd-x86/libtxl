@@ -10,7 +10,7 @@ struct resource
     int value;
 
     resource(int v)
-        : value(v)
+        : value{v}
     {
         ++created_;
     }
@@ -21,7 +21,11 @@ struct resource
         ++created_;
     }
     
-    resource(resource &&) = default;
+    resource(resource && r)
+        : resource{r.value}
+    {
+        r.value = 0;
+    }
 
     ~resource()
     {
@@ -35,6 +39,30 @@ TXL_UNIT_TEST(box_ownership)
     auto p = new int{123};
     x = txl::box<int>{p, true};
     assert_equal(x.get(), p);
+}
+
+TXL_UNIT_TEST(shallow_and_deep)
+{
+    created_ = deleted_ = 0;
+
+    assert_equal(created_, 0);
+    assert_equal(deleted_, 0);
+
+    std::vector<txl::box<resource>> ptrs{};
+
+    ptrs.emplace_back(std::make_unique<resource>(123));
+    assert_equal(created_, 1);
+    assert_equal(deleted_, 0);
+
+    ptrs.emplace_back(*ptrs[0]);
+    ptrs.emplace_back(ptrs[0].get());
+    
+    assert_equal(created_, 1);
+    assert_equal(deleted_, 0);
+
+    ptrs.clear();
+    assert_equal(created_, 1);
+    assert_equal(deleted_, 1);
 }
 
 TXL_UNIT_TEST(box)

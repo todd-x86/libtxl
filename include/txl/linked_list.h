@@ -154,9 +154,9 @@ namespace txl
             return head_.load(std::memory_order_relaxed).ptr() == tiny_ptr<node>{nullptr};
         }
         
-        auto push_back(Value const & v) -> Value &
+        auto push_back(Value const & v) -> void
         {
-            return emplace_back(v);
+            emplace_back(v);
         }
 
         template<class... Args>

@@ -10,6 +10,8 @@ add_executable(test_rb_writer test_rb_writer.cpp)
 target_link_libraries(test_rb_reader atomic)
 target_link_libraries(test_rb_writer atomic)
 
+add_executable(test_array_view test_array_view.cpp)
+add_test(NAME test_array_view COMMAND test_array_view)
 add_executable(test_backoff test_backoff.cpp)
 add_test(NAME test_backoff COMMAND test_backoff)
 add_executable(test_bitwise test_bitwise.cpp)

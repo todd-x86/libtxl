@@ -1,5 +1,6 @@
 #pragma once
 
+#include <txl/array_view.h>
 #include <txl/file_base.h>
 #include <txl/handle_error.h>
 #include <txl/result.h>
@@ -197,18 +198,9 @@ namespace txl
         auto u64() const -> uint64_t { return data_.u64; }
         auto u64(uint64_t v) -> void { data_.u64 = v; }
     };
-   
-    /**
-     * Pure virtual interface for receiving events from an event_poller.
-     */
-    struct event_buffer
-    {
-        virtual auto epoll_buffer() -> ::epoll_event * = 0;
-        virtual auto size() const -> size_t = 0;
-    };
 
     /**
-     * Rapper around an E poll event . 
+     * Wrapper around an epoll_event. 
      */
     struct event_data : private ::epoll_event
     {
@@ -217,9 +209,24 @@ namespace txl
         auto has_all(event_type t) const -> bool { return (events() & t) == t; }
         auto fd() const -> int { return data.fd; }
     };
+   
+    /**
+     * Pure virtual interface for receiving events from an event_poller.
+     */
+    struct event_buffer
+    {
+        virtual auto epoll_buffer() -> ::epoll_event * = 0;
+        virtual auto size() const -> size_t = 0;
+
+        auto to_array_view() -> array_view<::epoll_event>
+        {
+            auto * p = epoll_buffer();
+            return {p, std::next(p, size())};
+        }
+    };
 
     /**
-     * Array backed event buffer that stores event data up to a fixed length .
+     * Array-backed event_buffer that stores event data up to a fixed length.
      */
     template<size_t S>
     class event_array final : public event_buffer
@@ -255,7 +262,8 @@ namespace txl
     };
 
     /**
-     * Stood vector backed event buffer that stores event data but may be resized to accommodate more events . The event polar does not resize the event vector ; this is the responsibility of whatever passes the event vector to the event polar 
+     * std::vector-backed event buffer that stores event data but may be resized to accommodate more events.
+     * The event_poller does not resize the event_vector; this is the responsibility of whatever passes the event_vector to the event_poller.
      */
     class event_vector final : public event_buffer
     {
@@ -301,7 +309,7 @@ namespace txl
     };
 
     /**
-     * E Paul backed event polar which supports adding modifying and removing events and pulling the kernel for event updates .
+     * epoll-backed event poller which supports adding, modifying, and removing events and polling the kernel for event updates.
      */
     struct event_poller final : file_base
     {
@@ -365,6 +373,13 @@ namespace txl
         {
             // TODO: add sigset mask support
             auto res = ::epoll_pwait(fd_, buf.epoll_buffer(), buf.size(), timeout.value_or(std::chrono::milliseconds{-1}).count(), nullptr);
+            return handle_system_error(res, res);
+        }
+        
+        auto poll(array_view<::epoll_event> buf, std::optional<std::chrono::milliseconds> timeout = std::nullopt) -> result<int>
+        {
+            // TODO: add sigset mask support
+            auto res = ::epoll_pwait(fd_, buf.data(), buf.size(), timeout.value_or(std::chrono::milliseconds{-1}).count(), nullptr);
             return handle_system_error(res, res);
         }
     };

@@ -182,25 +182,23 @@ namespace txl
     };
 
     template<class Container, class ValueOrFunc>
-    inline auto find_or_emplace(Container & container, typename Container::key_type const & key, ValueOrFunc && value_or_func) -> typename Container::iterator
+    inline auto emplace(Container & container, typename Container::key_type const & key, ValueOrFunc value_or_func) -> std::pair<typename Container::iterator, bool>
     {
         if (auto it = container.find(key); it != container.end())
         {
-            return it;
+            return {{}, false};
         }
 
         if constexpr (std::is_same_v<ValueOrFunc, typename Container::mapped_type> or std::is_convertible_v<ValueOrFunc, typename Container::mapped_type>)
         {
             // Pass as value
-            auto [it, _] = container.emplace(key, std::move(value_or_func));
-            return it;
+            return container.emplace(key, std::move(value_or_func));
         }
         else
         {
             // Invoke as function
             auto value = value_or_func(key);
-            auto [it, _] = container.emplace(key, static_cast<typename Container::mapped_type &&>(std::move(value)));
-            return it;
+            return container.emplace(key, static_cast<typename Container::mapped_type &&>(std::move(value)));
         }
     }
 
@@ -254,6 +252,29 @@ namespace txl
             }
         }
         return num_erased;
+    }
+
+    template<class Container, class ValueOrFunc>
+    inline auto find_or_emplace(Container & container, typename Container::key_type const & key, ValueOrFunc && value_or_func) -> typename Container::iterator
+    {
+        if (auto it = container.find(key); it != container.end())
+        {
+            return it;
+        }
+
+        if constexpr (std::is_same_v<ValueOrFunc, typename Container::mapped_type> or std::is_convertible_v<ValueOrFunc, typename Container::mapped_type>)
+        {
+            // Pass as value
+            auto [it, _] = container.emplace(key, std::move(value_or_func));
+            return it;
+        }
+        else
+        {
+            // Invoke as function
+            auto value = value_or_func(key);
+            auto [it, _] = container.emplace(key, static_cast<typename Container::mapped_type &&>(std::move(value)));
+            return it;
+        }
     }
 
     template<class Container, class Key, class Func>
@@ -313,29 +334,6 @@ namespace txl
         return nullptr;
     }
 
-    template<class Container, class ValueOrFunc>
-    inline auto try_emplace(Container & container, typename Container::key_type const & key, ValueOrFunc value_or_func) -> bool
-    {
-        if (auto it = container.find(key); it != container.end())
-        {
-            return false;
-        }
-
-        if constexpr (std::is_same_v<ValueOrFunc, typename Container::mapped_type> or std::is_convertible_v<ValueOrFunc, typename Container::mapped_type>)
-        {
-            // Pass as value
-            auto [_, emplaced] = container.emplace(key, std::move(value_or_func));
-            return emplaced;
-        }
-        else
-        {
-            // Invoke as function
-            auto value = value_or_func(key);
-            auto [_, emplaced] = container.emplace(key, static_cast<typename Container::mapped_type &&>(std::move(value)));
-            return emplaced;
-        }
-    }
-
     template<class Container, class Value = typename Container::value_type>
     inline auto to_vector(Container const & container) -> std::vector<Value>
     {
@@ -367,6 +365,13 @@ namespace txl
             res.emplace(key, value);
         }
         return res;
+    }
+    
+    template<class Container, class ValueOrFunc>
+    inline auto try_emplace(Container & container, typename Container::key_type const & key, ValueOrFunc value_or_func) -> bool
+    {
+        auto [_, emplaced] = emplace(container, key, std::move(value_or_func));
+        return emplaced;
     }
     
     template<class ContainerOrView, class Key>

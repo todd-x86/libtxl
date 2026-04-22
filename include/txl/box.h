@@ -31,14 +31,22 @@ namespace txl
             : box(p.release(), true)
         {
         }
+        
         box(std::unique_ptr<Value> const & p)
             : box(p.get(), false)
         {
         }
+        
         box(std::shared_ptr<Value> const & p)
             : box(p.get(), false)
         {
         }
+
+        box(Value & p)
+            : box(&p, false)
+        {
+        }
+
         box(Value * p, bool owned = false)
             : ptr_(p)
         {
@@ -47,6 +55,7 @@ namespace txl
                 set_mask();
             }
         }
+        
         box(box && b)
             : ptr_{b.ptr_}
         {
@@ -57,6 +66,7 @@ namespace txl
         {
             erase();
         }
+        
         box(box const &) = delete;
         
         auto operator=(box && b) -> box &
