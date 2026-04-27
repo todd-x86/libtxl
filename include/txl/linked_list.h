@@ -1,7 +1,6 @@
 #pragma once
 
 #include <txl/atomic.h>
-#include <txl/tiny_ptr.h>
 
 #include <atomic>
 #include <cassert>
@@ -12,105 +11,75 @@
 
 namespace txl
 {
+    // NOTE: For ABA problem, can we allocate a chunk of sizeof(Value)*N and use it
+    //       like an arena?
     template<class Value>
     class atomic_linked_list final
     {
     private:
-        struct node final
+        struct value_node final
         {
-            alignas(Value) std::byte value_[sizeof(Value)];
-            tiny_ptr<node> next_;
-            uint8_t canary_ = 123;
-
-            node(node const &) = delete;
-            node(node &&) = delete;
-
-            ~node()
-            {
-                canary_ = 0;
-                val().~Value();
-            }
-
+            Value val;
+            value_node * next = nullptr;
+            
             template<class... Args>
-            auto assign(Args && ... args) -> void
+            value_node(Args && ... args)
+                : val(std::forward<Args>(args)...)
             {
-                new (&value_[0]) Value{std::forward<Args>(args)...};
-            }
-
-            auto operator=(node const &) -> node & = delete;
-            auto operator=(node &&) -> node & = delete;
-
-            auto canary_check() const
-            {
-                if (canary_ != 123)
-                {
-                    std::ostringstream ss;
-                    ss << "Heap after use: " << static_cast<void const *>(this) << "\n";
-                    throw std::runtime_error{ss.str()};
-                }
-            }
-
-            auto val() const -> Value const & { return *reinterpret_cast<Value const *>(&value_[0]); }
-            auto val() -> Value & { return *reinterpret_cast<Value *>(&value_[0]); }
-        };
-
-        struct head_tag final
-        {
-        private:
-            tiny_ptr<node> ptr_ = nullptr;
-            // seq_ is a way to deal with the ABA problem
-            uint32_t seq_ = 0;
-        public:
-            head_tag() = default;
-
-            head_tag(tiny_ptr<node> p, uint32_t seq)
-                : ptr_{p}
-                , seq_{seq}
-            {
-            }
-
-            auto ptr() const -> tiny_ptr<node>
-            {
-                return ptr_;
-            }
-
-            auto seq() const -> uint32_t
-            {
-                return seq_;
-            }
-
-            auto operator==(head_tag const & ht) const -> bool
-            {
-                return ht.seq_ == seq_ and ht.ptr_ == ptr_;
-            }
-
-            auto operator!=(head_tag const & ht) const -> bool
-            {
-                return not (*this == ht);
             }
         };
 
-        auto replace_head(tiny_ptr<node> n) -> head_tag
+        struct node_gen final
         {
-            return atomic_swap(head_, [this, n](auto ht) {
-                if (ht.ptr())
-                {
-                    from_tiny_ptr(ht.ptr())->next_ = n;
-                }
+            value_node * ptr;
+            uint32_t ctr;
+        };
 
-                return head_tag{n, ht.seq()+1};
-            });
-        }
-
-        std::atomic<head_tag> head_;
+        static_assert(sizeof(node_gen) <= sizeof(__uint128_t), "Generational node cannot exceed 16 bytes");
+        
+        node_gen head_;
         std::atomic<size_t> num_inserts_;
         std::atomic<size_t> num_pops_;
+
+        static inline auto create_alias(value_node * p)
+        {
+            return node_gen{p, 0};
+        }
+
+        static inline auto next_alias(node_gen n, value_node * vn)
+        {
+            return node_gen{vn, n.ctr+1};
+        }
+
+        static inline auto compare_and_swap(node_gen & target, node_gen expected, node_gen desired) -> bool
+        {
+            return __atomic_compare_exchange(&target, &expected, &desired, true, __ATOMIC_ACQUIRE, __ATOMIC_RELAXED);
+        }
+
+        static inline auto load(node_gen const & target) -> node_gen
+        {
+            node_gen res;
+            __atomic_load(&target, &res, __ATOMIC_ACQUIRE);
+            return res;
+        }
+
+        static inline auto load_relaxed(node_gen const & target) -> node_gen
+        {
+            node_gen res;
+            __atomic_load(&target, &res, __ATOMIC_RELAXED);
+            return res;
+        }
+
+        static inline auto store(node_gen & target, node_gen val) -> void
+        {
+            __atomic_store(&target, &val, __ATOMIC_RELEASE);
+        }
     public:
         atomic_linked_list()
-            : head_{head_tag{}}
-            , num_inserts_{0}
-            , num_pops_{0}
         {
+            store(head_, create_alias(nullptr));
+            num_inserts_.store(0, std::memory_order_release);
+            num_pops_.store(0, std::memory_order_release);
         }
 
         // Copying a list is an expensive operation that requires locking the entire list until we're done copying
@@ -137,77 +106,83 @@ namespace txl
 
         auto clear() -> size_t
         {
-            size_t num_destroyed = 0;
-            auto old_head = atomic_swap(head_, [](auto) { return head_tag{}; }).ptr();
-            while (not old_head.is_null())
+            node_gen empty, head;
+            do
             {
-                auto next = from_tiny_ptr(old_head)->next_;
-                delete from_tiny_ptr(old_head);
-                ++num_destroyed;
-                old_head = next;
+                head = load(head_);
+                empty = next_alias(head, nullptr);
             }
-            return num_destroyed;
+            while (not compare_and_swap(head_, head, empty));
+            
+            num_inserts_.store(0, std::memory_order_release);
+            num_pops_.store(0, std::memory_order_release);
+
+            if (not head.ptr)
+            {
+                return 0;
+            }
+
+            size_t num_deleted = 0;
+            auto p_head = head.ptr;
+            while (p_head)
+            {
+                auto next = p_head->next;
+                delete p_head;
+                ++num_deleted;
+                p_head = next;
+            }
+            return num_deleted;
         }
 
         auto empty() const -> bool
         {
-            return head_.load(std::memory_order_relaxed).ptr() == tiny_ptr<node>{nullptr};
+            return load_relaxed(head_).ptr == nullptr;
         }
         
-        auto push_back(Value const & v) -> void
+        auto push_front(Value const & v) -> void
         {
-            emplace_back(v);
+            emplace_front(v);
         }
 
         template<class... Args>
-        auto emplace_back(Args && ... args) -> void
+        auto emplace_front(Args && ... args) -> void
         {
-            auto n = new node{ .next_ = tiny_ptr<node>{nullptr}, .canary_ = 123 };
-            new (&n->value_[0]) Value{std::forward<Args>(args)...};
-
-            head_tag head{}, new_head{};
+            auto n = new value_node(std::forward<Args>(args)...);
+            node_gen head, next;
             do
             {
-                head = head_.load(std::memory_order_acquire);
-                n->next_ = head.ptr();
-                new_head = head_tag{to_tiny_ptr(n), head.seq()+1};
+                head = load(head_);
+                // next points to previous value
+                n->next = head.ptr;
+                next = next_alias(head, n);
             }
-            while (not head_.compare_exchange_weak(head, new_head, std::memory_order_release, std::memory_order_relaxed));
-
-            num_inserts_.fetch_add(1, std::memory_order_relaxed);
+            while (not compare_and_swap(head_, head, next));
+            
+            num_inserts_.fetch_add(1, std::memory_order_acq_rel);
         }
         
         auto pop_and_release_front() -> std::optional<Value>
         {
-            head_tag head, next;
-
+            node_gen head, next;
             do
             {
-                head = head_.load(std::memory_order_acquire);
-
-                if (head.ptr())
+                head = load(head_);
+                if (not head.ptr)
                 {
-                    next = head_tag{from_tiny_ptr(head.ptr())->next_, head.seq()+1};
+                    return {};
                 }
-                else
-                {
-                    next = head_tag{nullptr, head.seq()+1};
-                }
+                next = next_alias(head, head.ptr->next);
             }
-            while (not head_.compare_exchange_weak(head, next, std::memory_order_release, std::memory_order_relaxed));
-
-            // Safely remove the head
-            if (head.ptr())
+            while (not compare_and_swap(head_, head, next));
+            
+            if (not head.ptr)
             {
-                auto r_head = from_tiny_ptr(head.ptr());
-                r_head->canary_check();
-                auto res = std::make_optional<Value>(std::move(r_head->val()));
-                num_pops_.fetch_add(1, std::memory_order_relaxed);
-                delete r_head;
-                
-                return res;
+                return {};
             }
-            return {};
+            auto res = std::make_optional<Value>(std::move(head.ptr->val));
+            delete head.ptr;
+            num_pops_.fetch_add(1, std::memory_order_acq_rel);
+            return res;
         }
     };
 }

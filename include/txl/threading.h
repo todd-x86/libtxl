@@ -226,7 +226,7 @@ namespace txl
                 return false;
             }
 
-            pending_->emplace_back(c.release());
+            pending_->emplace_front(c.release());
             work_awaiter_.set();
             return true;
         }

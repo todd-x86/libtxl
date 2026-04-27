@@ -14,9 +14,9 @@ TXL_UNIT_TEST(atomic_linked_list_simple)
 TXL_UNIT_TEST(atomic_linked_list_push_pop)
 {
     auto l = txl::atomic_linked_list<int>{};
-    l.emplace_back(1);
-    l.emplace_back(2);
-    l.emplace_back(3);
+    l.emplace_front(1);
+    l.emplace_front(2);
+    l.emplace_front(3);
     assert_false(l.empty());
     assert_equal(*l.pop_and_release_front(), 3);
     assert_equal(*l.pop_and_release_front(), 2);
@@ -50,9 +50,9 @@ TXL_UNIT_TEST(atomic_linked_list_free)
 {
     auto l = txl::atomic_linked_list<delete_me>{};
     assert_equal(num_deletes, 0);
-    l.emplace_back();
-    l.emplace_back();
-    l.emplace_back();
+    l.emplace_front();
+    l.emplace_front();
+    l.emplace_front();
     assert_equal(num_deletes, 0);
     assert_false(l.empty());
     l.pop_and_release_front();
@@ -69,7 +69,7 @@ TXL_UNIT_TEST(atomic_linked_list_free)
 TXL_UNIT_TEST(atomic_linked_list_move)
 {
     auto l = txl::atomic_linked_list<std::string>{};
-    l.emplace_back("Hello World No Small String Optimization Here");
+    l.emplace_front("Hello World No Small String Optimization Here");
     assert_false(l.empty());
     auto s = std::move(*l.pop_and_release_front());
     assert_true(l.empty());
@@ -84,7 +84,7 @@ TXL_UNIT_TEST(atomic_linked_list_add_lots)
     {
         ss.str("");
         ss << "Hello from the following number: " << i;
-        l.emplace_back(ss.str());
+        l.emplace_front(ss.str());
     }
     
     for (auto i = 9999; i >= 0; --i)
@@ -107,7 +107,7 @@ TXL_UNIT_TEST_N(atomic_linked_list_concurrency, 100)
             a.wait();
             for (auto i = 0; i < n; ++i)
             {
-                l.emplace_back("Complicated");
+                l.emplace_front("Complicated");
             }
         };
     };
@@ -142,6 +142,68 @@ TXL_UNIT_TEST_N(atomic_linked_list_concurrency, 100)
     assert_equal(l.num_pops(), 100+190);
     
     //assert_equal(counter.load(std::memory_order_acquire), 240);
+}
+
+TXL_UNIT_TEST_N(atomic_linked_list_thread_safety, 100)
+{
+    auto l = txl::atomic_linked_list<int>{};
+    std::atomic<int> total_pushed = 0;
+    std::atomic<int> total_popped = 0;
+
+    constexpr int num_producers = 3;
+    constexpr int num_consumers = 3;
+    constexpr int items_per_producer = 500;
+    constexpr int total_items = num_producers * items_per_producer;
+
+    auto producer = [&](int id) {
+        return [&, id]() {
+            for (auto i = 0; i < items_per_producer; ++i)
+            {
+                l.emplace_front(id * items_per_producer + i);
+                total_pushed.fetch_add(1, std::memory_order_release);
+            }
+        };
+    };
+
+    auto consumer = [&]() {
+        while (total_popped.load(std::memory_order_acquire) < total_items)
+        {
+            auto value = l.pop_and_release_front();
+            if (value)
+            {
+                total_popped.fetch_add(1, std::memory_order_release);
+            }
+        }
+    };
+
+    std::thread producers[num_producers];
+    std::thread consumers[num_consumers];
+
+    for (auto i = 0; i < num_producers; ++i)
+    {
+        producers[i] = std::thread(producer(i));
+    }
+
+    for (auto i = 0; i < num_consumers; ++i)
+    {
+        consumers[i] = std::thread(consumer);
+    }
+
+    for (auto i = 0; i < num_producers; ++i)
+    {
+        producers[i].join();
+    }
+
+    for (auto i = 0; i < num_consumers; ++i)
+    {
+        consumers[i].join();
+    }
+
+    assert_equal(total_pushed.load(), total_items);
+    assert_equal(total_popped.load(), total_items);
+    assert_equal(l.num_inserts(), total_items);
+    assert_equal(l.num_pops(), total_items);
+    assert_true(l.empty());
 }
 
 TXL_RUN_TESTS()
