@@ -32,7 +32,7 @@ namespace txl
         struct node_gen final
         {
             value_node * ptr;
-            uint32_t ctr;
+            uint64_t ctr;
         };
 
         static_assert(sizeof(node_gen) <= sizeof(__uint128_t), "Generational node cannot exceed 16 bytes");
@@ -106,6 +106,12 @@ namespace txl
 
         auto clear() -> size_t
         {
+            return release([](auto const &) {});
+        }
+
+        template<class OnValueFunc>
+        auto release(OnValueFunc on_val) -> size_t
+        {
             node_gen empty, head;
             do
             {
@@ -122,16 +128,18 @@ namespace txl
                 return 0;
             }
 
-            size_t num_deleted = 0;
+            size_t num_released = 0;
             auto p_head = head.ptr;
             while (p_head)
             {
+                on_val(p_head->val);
+
                 auto next = p_head->next;
                 delete p_head;
-                ++num_deleted;
+                ++num_released;
                 p_head = next;
             }
-            return num_deleted;
+            return num_released;
         }
 
         auto empty() const -> bool

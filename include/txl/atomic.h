@@ -1,6 +1,7 @@
 #pragma once
 
 #include <atomic>
+#include <functional>
 
 namespace txl
 {
@@ -175,5 +176,164 @@ namespace txl
          * Const accessor.
          */
         T const * operator->() const { return &new_value_; }
+    };
+
+    template<class Value>
+    class lazy_atomic final
+    {
+    public:
+        using factory_type = std::function<Value*()>;
+    private:
+        struct init_ready final
+        {
+        };
+
+        struct node final
+        {
+            uintptr_t ptr_ = 0x0;
+
+            node() = default;
+            // Represents a "pending" state to let the thread that acquired it to initialize
+            node(init_ready) : ptr_{0x1} {}
+            // Initialization via factory
+            node(factory_type & fac) : ptr_{reinterpret_cast<uintptr_t>(fac())} {}
+            // Initialization by move
+            node(Value && v) : ptr_{reinterpret_cast<uintptr_t>(new Value(std::move(v)))} {}
+
+            auto is_empty() const { return ptr_ == 0x0; }
+            auto is_pending() const { return ptr_ == 0x1; }
+            auto has_value() const { return not is_empty() and not is_pending(); }
+
+            auto destroy()
+            {
+                if (is_empty() or is_pending())
+                {
+                    return;
+                }
+                auto p = get();
+                ptr_ = 0x0;
+                delete p;
+            }
+
+            auto get() const { return reinterpret_cast<Value const *>(ptr_); }
+            auto get() { return reinterpret_cast<Value *>(ptr_); }
+        };
+        factory_type factory_;
+        std::atomic<node> value_;
+    public:
+        lazy_atomic(factory_type fac)
+            : factory_{std::move(fac)}
+        {
+            // Empty
+            value_.store(node{}, std::memory_order_release);
+        }
+
+        lazy_atomic(lazy_atomic const &) = delete;
+        lazy_atomic(lazy_atomic &&) = delete;
+
+        ~lazy_atomic()
+        {
+            clear();
+        }
+
+        auto clear()
+        {
+            node expected, desired{};
+            // Swap out with an empty node
+            do
+            {
+                expected = value_.load(std::memory_order_relaxed);
+                if (not expected.has_value())
+                {
+                    // Nothing to destruct
+                    return;
+                }
+            }
+            while (not value_.compare_exchange_weak(expected, desired, std::memory_order_release, std::memory_order_relaxed));
+            
+            // Destroy contents
+            expected.destroy();
+        }
+
+        auto operator=(Value && v) -> lazy_atomic &
+        {
+            clear();
+
+            node expected, desired{init_ready{}};
+            // Perform a swap just to reserve the spot -- we'll init later
+            bool replaced = false;
+            do
+            {
+                replaced = false;
+                expected = value_.load(std::memory_order_acquire);
+                if (not expected.is_empty())
+                {
+                    break;
+                }
+                replaced = true;
+            }
+            while (not value_.compare_exchange_weak(expected, desired, std::memory_order_release, std::memory_order_relaxed));
+
+            if (replaced)
+            {
+                // We captured the spot (already), let's get the pointer or initialize it first
+                desired = node{std::move(v)};
+                do
+                {
+                    expected = value_.load(std::memory_order_relaxed);
+                }
+                while (not value_.compare_exchange_weak(expected, desired, std::memory_order_release, std::memory_order_relaxed));
+            }
+            
+            // Spin until we get a node that isn't pending
+            do
+            {
+                expected = value_.load(std::memory_order_relaxed);
+            }
+            while (expected.is_pending());
+            return *this;
+        }
+
+        auto ptr() -> Value *
+        {
+            node expected, desired{init_ready{}};
+            // Perform a swap just to reserve the spot -- we'll init later
+            bool replaced = false;
+            do
+            {
+                replaced = false;
+                expected = value_.load(std::memory_order_acquire);
+                if (not expected.is_empty())
+                {
+                    break;
+                }
+                replaced = true;
+            }
+            while (not value_.compare_exchange_weak(expected, desired, std::memory_order_release, std::memory_order_relaxed));
+
+            if (replaced)
+            {
+                // We captured the spot (already), let's get the pointer or initialize it first
+                desired = node{factory_};
+                do
+                {
+                    expected = value_.load(std::memory_order_relaxed);
+                }
+                while (not value_.compare_exchange_weak(expected, desired, std::memory_order_release, std::memory_order_relaxed));
+            }
+            
+            // Spin until we get a node that isn't pending
+            do
+            {
+                expected = value_.load(std::memory_order_relaxed);
+            }
+            while (expected.is_pending());
+            return expected.get();
+        }
+
+        auto get() -> Value &
+        {
+            return *ptr();
+        }
     };
 }
