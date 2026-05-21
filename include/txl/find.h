@@ -69,7 +69,11 @@ namespace txl
                 }
                 else
                 {
-                    match_index_ = lps_[match_index_-1];
+                    if (match_index_ > 0)
+                    {
+                        match_index_ = lps_[match_index_-1];
+                    }
+                    
                     if (match_index_ == 0)
                     {
                         // No substring to skip

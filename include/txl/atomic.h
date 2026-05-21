@@ -242,7 +242,7 @@ namespace txl
             // Swap out with an empty node
             do
             {
-                expected = value_.load(std::memory_order_relaxed);
+                expected = value_.load(std::memory_order_acquire);
                 if (not expected.has_value())
                 {
                     // Nothing to destruct
@@ -280,17 +280,11 @@ namespace txl
                 desired = node{std::move(v)};
                 do
                 {
-                    expected = value_.load(std::memory_order_relaxed);
+                    expected = value_.load(std::memory_order_acquire);
                 }
                 while (not value_.compare_exchange_weak(expected, desired, std::memory_order_release, std::memory_order_relaxed));
             }
             
-            // Spin until we get a node that isn't pending
-            do
-            {
-                expected = value_.load(std::memory_order_relaxed);
-            }
-            while (expected.is_pending());
             return *this;
         }
 
@@ -317,7 +311,7 @@ namespace txl
                 desired = node{factory_};
                 do
                 {
-                    expected = value_.load(std::memory_order_relaxed);
+                    expected = value_.load(std::memory_order_acquire);
                 }
                 while (not value_.compare_exchange_weak(expected, desired, std::memory_order_release, std::memory_order_relaxed));
             }
