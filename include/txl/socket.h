@@ -111,11 +111,32 @@ namespace txl
             return handle_system_error(fd_);
         }
         
+        auto recv_from(buffer_ref buf, socket_address & src, io_flags f = io_flags::none) -> result<buffer_ref>
+        {
+            ::socklen_t size = src.size();
+            auto res = ::recvfrom(fd_, buf.data(), buf.size(), static_cast<int>(f), reinterpret_cast<::sockaddr *>(src.sockaddr()), &size);
+            if (auto err = handle_system_error(res); not err)
+            {
+                return err.error();
+            }
+            return buf.slice(0, res);
+        }
+        
         using reader::read;
 
         auto read(buffer_ref buf, io_flags f) -> result<buffer_ref>
         {
             auto res = ::recv(fd_, buf.data(), buf.size(), static_cast<int>(f));
+            if (auto err = handle_system_error(res); not err)
+            {
+                return err.error();
+            }
+            return buf.slice(0, res);
+        }
+        
+        auto send_to(buffer_ref buf, socket_address const & dst, io_flags f = io_flags::none) -> result<buffer_ref>
+        {
+            auto res = ::sendto(fd_, buf.data(), buf.size(), static_cast<int>(f), reinterpret_cast<::sockaddr const *>(dst.sockaddr()), dst.size());
             if (auto err = handle_system_error(res); not err)
             {
                 return err.error();

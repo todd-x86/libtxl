@@ -34,6 +34,7 @@ namespace txl
 
         auto port() const -> uint16_t { return ntohs(addr_.sin_port); }
 
+        auto sockaddr() -> ::sockaddr_in * { return &addr_; }
         auto sockaddr() const -> ::sockaddr_in const * { return &addr_; }
         static constexpr auto size() -> size_t { return sizeof(addr_); }
 
