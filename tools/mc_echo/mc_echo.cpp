@@ -24,6 +24,7 @@ int main(int argc, char * argv[])
         std::cout << "Sending \"" << send_payload << "\" every " << send_delay << "ms to " << addr_str << ":" << port << std::endl;
         timer.open(txl::event_timer::steady_clock).or_throw();
         timer.set_time(std::chrono::steady_clock::now() + std::chrono::milliseconds{send_delay}, std::chrono::milliseconds{send_delay}).or_throw();
+        ep.add(timer.fd(), txl::event_type::in).or_throw();
     }
 
     txl::multicast_socket sock{};
@@ -32,7 +33,7 @@ int main(int argc, char * argv[])
     sock.set_option(txl::socket_option::reuse_address, 1).or_throw();
     sock.join_multicast(txl::socket_address{addr_str}).or_throw();
     sock.bind(txl::socket_address{static_cast<uint16_t>(port)}).or_throw();
-    ep.add(sock.fd(), txl::event_type::in);
+    ep.add(sock.fd(), txl::event_type::in).or_throw();
     txl::socket_address addr{};
     char buf[2000];
     txl::event_array<10> evts{}; 
@@ -57,7 +58,7 @@ int main(int argc, char * argv[])
                 auto r = sock.recv_from(buf, addr).or_throw();
                 if (r.size())
                 {
-                    std::cout << "RECV: " << r.size() << " bytes\n";
+                    std::cout << "RECV (" << r.size() << " bytes): ";
                     for (auto c : r)
                     {
                         if (static_cast<int>(c) < 32 or static_cast<int>(c) > 127)
@@ -69,7 +70,6 @@ int main(int argc, char * argv[])
                             std::cout << static_cast<char>(c);
                         }
                     }
-                    std::cout << r.to_string_view();
                     std::cout << "\n";
                 }
                 continue;
