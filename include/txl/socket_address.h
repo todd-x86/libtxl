@@ -3,6 +3,7 @@
 #include <arpa/inet.h>
 #include <netinet/in.h>
 #include <cstdint>
+#include <string>
 
 namespace txl
 {
@@ -23,6 +24,11 @@ namespace txl
         {
             addr_.sin_addr.s_addr = htonl(INADDR_ANY);
             addr_.sin_port = htons(port);
+        }
+        
+        socket_address(std::string const & ip, uint16_t port = 0)
+            : socket_address(ip.c_str(), port)
+        {
         }
 
         socket_address(char const * ip, uint16_t port = 0)

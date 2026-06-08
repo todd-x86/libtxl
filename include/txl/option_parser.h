@@ -3,6 +3,7 @@
 #include <txl/iterator_view.h>
 
 #include <functional>
+#include <iostream>
 #include <map>
 #include <sstream>
 #include <stdexcept>
@@ -20,6 +21,7 @@ namespace txl
             {
                 str_value,
                 bool_value,
+                int32_value,
             };
 
             value_type val_type;
@@ -27,6 +29,7 @@ namespace txl
             {
                 std::string * str_val;
                 bool * bool_val;
+                int32_t * int32_val;
             };
 
             option(std::string & dst)
@@ -38,6 +41,12 @@ namespace txl
             option(bool & dst)
                 : val_type{bool_value}
                 , bool_val{&dst}
+            {
+            }
+            
+            option(int32_t & dst)
+                : val_type{int32_value}
+                , int32_val{&dst}
             {
             }
 
@@ -59,6 +68,10 @@ namespace txl
                     break;
                 case option::bool_value:
                     *opt.bool_val = true;
+                    break;
+                case option::int32_value:
+                    *opt.int32_val = std::atoi(*arg_iter);
+                    ++arg_iter;
                     break;
             }
         }
@@ -83,6 +96,13 @@ namespace txl
             return emplaced;
         }
 
+        auto add_flag(char flag, int32_t & value) -> bool
+        {
+            value = 0;
+            auto [_, emplaced] = opts_.emplace(flag, option{value});
+            return emplaced;
+        }
+
         auto get_usage_string(std::string_view exe) const -> std::string
         {
             std::ostringstream ss{};
@@ -95,6 +115,9 @@ namespace txl
                     case option::str_value:
                         ss << " <str>";
                         break;
+                    case option::int32_value:
+                        ss << " <int>";
+                        break;
                     case option::bool_value:
                         // Deliberately empty
                         break;
@@ -102,6 +125,26 @@ namespace txl
                 ss << " ]";
             }
             return ss.str();
+        }
+
+        auto parse_or_exit(int argc, char const * argv[], parser_options * opts = nullptr) -> void
+        {
+            bool print_help = false;
+            add_flag('h', print_help);
+            try
+            {
+                parse(argc, argv, opts);
+                if (print_help)
+                {
+                    std::cout << get_usage_string(argv[0]) << std::endl;;
+                    std::exit(0);
+                }
+            }
+            catch (std::runtime_error const & ex)
+            {
+                std::cerr << "error: " << ex.what() << std::endl;
+                std::exit(1);
+            }
         }
 
         auto parse(int argc, char const * argv[], parser_options * opts = nullptr) -> void
