@@ -57,7 +57,7 @@ namespace txl
          */
         template<size_t Size>
         array_view(std::array<Value, Size> & data)
-            : array_view(&data[0], &data[Size])
+            : array_view(&data[0], std::next(&data[0], Size))
         {
         }
 
@@ -68,7 +68,7 @@ namespace txl
          */
         template<size_t Size>
         array_view(Value (&values)[Size])
-            : array_view(&values[0], &values[Size])
+            : array_view(&values[0], std::next(&values[0], Size))
         {
         }
         

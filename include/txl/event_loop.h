@@ -63,8 +63,8 @@ namespace txl::events
 
     struct dispatch_stats
     {
-        std::chrono::nanoseconds wait_time = {0};
-        size_t num_dispatched = 0;
+        std::chrono::steady_clock::time_point ts_pre_poll, ts_post_poll;
+        size_t num_dispatched;
     };
 
     struct dispatch_params
@@ -95,18 +95,17 @@ namespace txl::events
             return false;
         }
 
-        auto dispatch(dispatch_params const & params) -> ::txl::result<dispatch_stats>
+        auto dispatch(dispatch_params const & params) -> dispatch_stats
         {
             auto t1 = std::chrono::steady_clock::now();
             auto res = poller_.poll(evts_, timeout);
             auto t2 = std::chrono::steady_clock::now();
 
-            if (res.is_error())
+            if (not res.is_error())
             {
-                return res.error();
             }
 
-            
+            return {t1, t2, res};
         }
     };
 }

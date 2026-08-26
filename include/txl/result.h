@@ -272,7 +272,7 @@ namespace txl
             // Only runs if result is NOT an error
             if (is_assigned() and not is_error())
             {
-                *this = std::move(cont());
+                *this = cont();
             }
             return *this;
         }

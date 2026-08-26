@@ -249,8 +249,9 @@ namespace txl
             while (unit.has_value() or num_busy_ != 0)
             {
                 auto & state = workers_[index];
-                auto added = state.worker_->add(*unit);
-                if (added)
+
+                // Add more work to a worker
+                if (unit and state.worker_->add(*unit))
                 {
                     unit = work.pop_front();
                 }

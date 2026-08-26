@@ -83,6 +83,6 @@ namespace txl
         auto size() const -> size_t { return deltas_.size(); }
 
         auto begin() const -> const_iterator { return {base_, &deltas_[0]}; }
-        auto end() const -> const_iterator { return {base_, &deltas_[size()]}; }
+        auto end() const -> const_iterator { return {base_, std::next(&deltas_[0], size())}; }
     };
 }

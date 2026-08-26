@@ -60,6 +60,16 @@ namespace txl
             // Sacrificing stability here by not moving count_ until the end of the move operation
             other.count_ = 0;
         }
+        
+        auto ptr(size_t offset) const -> Value const *
+        {
+            return std::next(&(*data_[0]), offset);
+        }
+        
+        auto ptr(size_t offset) -> Value *
+        {
+            return std::next(&(*data_[0]), offset);
+        }
     public:
         fixed_vector() = default;
         
@@ -204,42 +214,42 @@ namespace txl
 
         auto data() -> Value *
         {
-            return &(*data_[0]);
+            return ptr(0);
         }
 
         auto data() const -> Value const *
         {
-            return &(*data_[0]);
+            return ptr(0);
         }
 
         auto begin() -> iterator
         {
-            return {&(*data_[0])};
+            return {ptr(0)};
         }
 
         auto begin() const -> const_iterator
         {
-            return {&(*data_[0])};
+            return {ptr(0)};
         }
 
         auto cbegin() const noexcept -> const_iterator
         {
-            return {&(*data_[0])};
+            return {ptr(0)};
         }
 
         auto end() -> iterator
         {
-            return {&(*data_[size()])};
+            return {ptr(size())};
         }
 
         auto end() const -> const_iterator
         {
-            return {&(*data_[size()])};
+            return {ptr(size())};
         }
 
         auto cend() const noexcept -> const_iterator
         {
-            return {&(*data_[size()])};
+            return {ptr(size())};
         }
 
         auto rbegin() -> reverse_iterator
@@ -313,7 +323,7 @@ namespace txl
 
             data_[index].emplace(value);
             ++count_;
-            return iterator{&(*data_[index])};
+            return iterator{ptr(index)};
         }
 
         auto insert(const_iterator pos, Value && value) -> result<iterator>
@@ -328,7 +338,7 @@ namespace txl
 
             data_[index].emplace(std::move(value));
             ++count_;
-            return iterator{&(*data_[index])};
+            return iterator{ptr(index)};
         }
 
         auto insert(const_iterator pos, size_type count, Value const & value) -> result<iterator>
@@ -346,7 +356,7 @@ namespace txl
                 data_[index + i].emplace(value);
                 ++count_;
             }
-            return iterator{&(*data_[index])};
+            return iterator{ptr(index)};
         }
 
         template<class Iter, class = std::enable_if<std::is_convertible_v<typename std::iterator_traits<Iter>::iterator_category, std::input_iterator_tag>>>
@@ -367,7 +377,7 @@ namespace txl
                 data_[index].emplace(value);
                 ++index;
             }
-            return iterator{&(*data_[orig_index])};
+            return iterator{ptr(orig_index)};
         }
 
         auto insert(const_iterator pos, std::initializer_list<Value> list) -> result<iterator>
@@ -386,7 +396,7 @@ namespace txl
                 data_[index].emplace(value);
                 ++index;
             }
-            return iterator{&(*data_[orig_index])};
+            return iterator{ptr(orig_index)};
         }
 
         template<class... Args>
@@ -402,7 +412,7 @@ namespace txl
 
             data_[index].emplace(std::forward<Args>(args)...);
             ++count_;
-            return iterator{&(*data_[index])};
+            return iterator{ptr(index)};
         }
 
         auto erase(iterator pos) -> iterator
@@ -415,7 +425,7 @@ namespace txl
             {
                 return end();
             }
-            return iterator{&(*data_[index])};
+            return iterator{ptr(index)};
         }
 
         auto erase(const_iterator pos) -> iterator
@@ -428,7 +438,7 @@ namespace txl
             {
                 return end();
             }
-            return iterator{&(*data_[index])};
+            return iterator{ptr(index)};
         }
 
         auto erase(iterator first, iterator last) -> iterator
@@ -452,7 +462,7 @@ namespace txl
             {
                 return end();
             }
-            return iterator{&(*data_[begin_index])};
+            return iterator{ptr(begin_index)};
         }
 
         auto push_back(Value const & value) -> result<iterator>
@@ -475,7 +485,7 @@ namespace txl
 
             data_[size()].emplace(std::forward<Args>(args)...);
             ++count_;
-            return {iterator{&(*data_[size()-1])}};
+            return iterator{ptr(size()-1)};
         }
 
         auto pop_back() -> void

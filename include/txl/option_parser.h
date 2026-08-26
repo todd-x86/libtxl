@@ -25,6 +25,7 @@ namespace txl
             };
 
             value_type val_type;
+            // TODO: use storage_union
             union
             {
                 std::string * str_val;

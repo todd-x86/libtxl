@@ -45,8 +45,8 @@ namespace txl
     public:
         stream_find(buffer_ref match)
             : match_{match}
-            , lps_{match.size(), 0}
         {
+            lps_.resize(match.size(), 0);
             init_lps_table();
         }
 
