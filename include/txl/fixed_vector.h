@@ -61,14 +61,24 @@ namespace txl
             other.count_ = 0;
         }
         
-        auto ptr(size_t offset) const -> Value const *
+        auto const_ptr(difference_type offset) const -> const_pointer
         {
             return std::next(&(*data_[0]), offset);
         }
         
-        auto ptr(size_t offset) -> Value *
+        auto ptr(difference_type offset) -> unsafe_storage<Value> *
+        {
+            return std::next(&data_[0], offset);
+        }
+        
+        auto value_ptr(difference_type offset) -> pointer
         {
             return std::next(&(*data_[0]), offset);
+        }
+
+        auto iter(difference_type offset) -> iterator
+        {
+            return iterator{value_ptr(offset)};
         }
     public:
         fixed_vector() = default;
@@ -214,42 +224,42 @@ namespace txl
 
         auto data() -> Value *
         {
-            return ptr(0);
+            return value_ptr(0);
         }
 
         auto data() const -> Value const *
         {
-            return ptr(0);
+            return value_ptr(0);
         }
 
         auto begin() -> iterator
         {
-            return {ptr(0)};
+            return iter(0);
         }
 
         auto begin() const -> const_iterator
         {
-            return {ptr(0)};
+            return {const_ptr(0)};
         }
 
         auto cbegin() const noexcept -> const_iterator
         {
-            return {ptr(0)};
+            return {const_ptr(0)};
         }
 
         auto end() -> iterator
         {
-            return {ptr(size())};
+            return iter(size());
         }
 
         auto end() const -> const_iterator
         {
-            return {ptr(size())};
+            return {const_ptr(size())};
         }
 
         auto cend() const noexcept -> const_iterator
         {
-            return {ptr(size())};
+            return {const_ptr(size())};
         }
 
         auto rbegin() -> reverse_iterator
@@ -323,7 +333,7 @@ namespace txl
 
             data_[index].emplace(value);
             ++count_;
-            return iterator{ptr(index)};
+            return iter(index);
         }
 
         auto insert(const_iterator pos, Value && value) -> result<iterator>
@@ -334,11 +344,11 @@ namespace txl
             }
 
             size_type index = std::distance(cbegin(), pos);
-            std::move_backward(&data_[index], &data_[size()], &data_[size()+1]);
+            std::move_backward(ptr(index), ptr(size()), ptr(size()+1));
 
             data_[index].emplace(std::move(value));
             ++count_;
-            return iterator{ptr(index)};
+            return iter(index);
         }
 
         auto insert(const_iterator pos, size_type count, Value const & value) -> result<iterator>
@@ -349,14 +359,14 @@ namespace txl
             }
 
             size_type index = std::distance(cbegin(), pos);
-            std::move_backward(&data_[index], &data_[size()], &data_[size()+count]);
+            std::move_backward(ptr(index), ptr(size()), ptr(size()+count));
 
             for (size_type i = 0; i < count; ++i)
             {
                 data_[index + i].emplace(value);
                 ++count_;
             }
-            return iterator{ptr(index)};
+            return iter(index);
         }
 
         template<class Iter, class = std::enable_if<std::is_convertible_v<typename std::iterator_traits<Iter>::iterator_category, std::input_iterator_tag>>>
@@ -370,14 +380,14 @@ namespace txl
 
             size_type index = std::distance(cbegin(), pos);
             auto orig_index = index;
-            std::move_backward(&data_[index], &data_[size()], &data_[size()+count]);
+            std::move_backward(ptr(index), ptr(size()), ptr(size()+count));
 
             for (auto const & value : make_iterator_view(begin, end))
             {
                 data_[index].emplace(value);
                 ++index;
             }
-            return iterator{ptr(orig_index)};
+            return iter(orig_index);
         }
 
         auto insert(const_iterator pos, std::initializer_list<Value> list) -> result<iterator>
@@ -389,14 +399,14 @@ namespace txl
 
             size_type index = std::distance(cbegin(), pos);
             auto orig_index = index;
-            std::move_backward(&data_[index], &data_[size()], &data_[size()+list.size()]);
+            std::move_backward(ptr(index), ptr(size()), ptr(size()+list.size()));
 
             for (auto const & value : list)
             {
                 data_[index].emplace(value);
                 ++index;
             }
-            return iterator{ptr(orig_index)};
+            return iter(orig_index);
         }
 
         template<class... Args>
@@ -408,37 +418,37 @@ namespace txl
             }
 
             size_type index = std::distance(cbegin(), pos);
-            std::move_backward(&data_[index], &data_[size()], &data_[size()+1]);
+            std::move_backward(ptr(index), ptr(size()), ptr(size()+1));
 
             data_[index].emplace(std::forward<Args>(args)...);
             ++count_;
-            return iterator{ptr(index)};
+            return iter(index);
         }
 
         auto erase(iterator pos) -> iterator
         {
             size_type index = std::distance(begin(), pos);
             data_[index].erase();
-            std::move_backward(&data_[index+1], &data_[size()], &data_[size()-1]);
+            std::move_backward(ptr(index+1), ptr(size()), ptr(size()-1));
             --count_;
             if (index >= count_)
             {
                 return end();
             }
-            return iterator{ptr(index)};
+            return iter(index);
         }
 
         auto erase(const_iterator pos) -> iterator
         {
             size_type index = std::distance(cbegin(), pos);
             data_[index].erase();
-            std::move_backward(&data_[index + 1], &data_[size()], &data_[size()-1]);
+            std::move_backward(ptr(index+1), ptr(size()), ptr(size()-1));
             --count_;
             if (index >= count_)
             {
                 return end();
             }
-            return iterator{ptr(index)};
+            return iter(index);
         }
 
         auto erase(iterator first, iterator last) -> iterator
@@ -457,12 +467,12 @@ namespace txl
                 data_[i].erase();
                 --count_;
             }
-            std::move_backward(&data_[end_index], &data_[old_size], &data_[old_size-(end_index - begin_index)]);
+            std::move_backward(ptr(end_index), ptr(old_size), ptr(old_size - (end_index-begin_index)));
             if (begin_index >= count_)
             {
                 return end();
             }
-            return iterator{ptr(begin_index)};
+            return iter(begin_index);
         }
 
         auto push_back(Value const & value) -> result<iterator>
@@ -485,7 +495,7 @@ namespace txl
 
             data_[size()].emplace(std::forward<Args>(args)...);
             ++count_;
-            return iterator{ptr(size()-1)};
+            return iter(size()-1);
         }
 
         auto pop_back() -> void
