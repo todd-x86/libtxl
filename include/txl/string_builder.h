@@ -38,6 +38,8 @@ namespace txl
         {
             std::free(data_);
             data_ = nullptr;
+            num_used_ = 0;
+            size_ = 0;
         }
 
         auto clear()
