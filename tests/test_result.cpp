@@ -4,14 +4,8 @@
 #include <stdexcept>
 #include <string>
 
-struct error_context final
-{
-    using error_type = std::string;
-    using exception_type = std::runtime_error;
-};
-
 // Result where std::string is both the value and the error type
-using test_result = txl::result<std::string, error_context>;
+using test_result = txl::result<std::string, std::string, std::runtime_error>;
 
 auto error_or_value() -> test_result
 {

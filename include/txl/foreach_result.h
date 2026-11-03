@@ -9,20 +9,20 @@
 
 namespace txl
 {
-    template<class T, class E>
+    template<class T, class E, class X>
     class foreach_result_view
     {
     private:
-        std::function<result<T, E>()> iter_;
+        std::function<result<T, E, X>()> iter_;
     public:
         class const_iterator
         {
         private:
-            std::function<result<T, E>()> * iter_ = nullptr;
+            std::function<result<T, E, X>()> * iter_ = nullptr;
             std::optional<T> current_{};
         public:
             const_iterator() = default;
-            const_iterator(std::function<result<T, E>()> & iter)
+            const_iterator(std::function<result<T, E, X>()> & iter)
                 : iter_{&iter}
             {
                 // Emplace first value
@@ -73,7 +73,7 @@ namespace txl
             }
         };
 
-        foreach_result_view(std::function<result<T, E>()> iter)
+        foreach_result_view(std::function<result<T, E, X>()> iter)
             : iter_{iter}
         {
         }
@@ -89,10 +89,10 @@ namespace txl
         }
     };
 
-    template<class ResultFunc, class T = typename std::invoke_result_t<ResultFunc>::value_type, class E = typename std::invoke_result_t<ResultFunc>::error_context_type>
-    inline auto foreach_result(ResultFunc && generator) -> foreach_result_view<T, E>
+    template<class ResultFunc, class T = typename std::invoke_result_t<ResultFunc>::value_type, class E = typename std::invoke_result_t<ResultFunc>::error_type, class X = typename std::invoke_result_t<ResultFunc>::exception_type>
+    inline auto foreach_result(ResultFunc && generator) -> foreach_result_view<T, E, X>
     {
-        std::function<result<T, E>()> res = generator;
+        std::function<result<T, E, X>()> res = generator;
         return {res};
     }
 }

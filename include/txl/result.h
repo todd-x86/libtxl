@@ -10,12 +10,6 @@
 
 namespace txl
 {
-    struct system_error_context
-    {
-        using error_type = std::error_code;
-        using exception_type = std::system_error;
-    };
-
     struct empty_result_error : std::runtime_error
     {
         using std::runtime_error::runtime_error;
@@ -58,12 +52,10 @@ namespace txl
         return {err};
     }
 
-    template<class Value, class ErrorContext = system_error_context>
+    template<class Value, class ErrorType = std::error_code, class ExceptionType = std::system_error>
     class result final
     {
     private:
-        using error_type = typename ErrorContext::error_type;
-        
         enum flags : uint8_t
         {
             ASSIGNED = 1 << 0,
@@ -73,7 +65,7 @@ namespace txl
         union
         {
             Value value_;
-            error_type error_;
+            ErrorType error_;
         };
         uint8_t flags_ = 0;
 
@@ -88,7 +80,7 @@ namespace txl
             {
                 if (prev_error)
                 {
-                    error_.~error_type();
+                    error_.~ErrorType();
                 }
                 else
                 {
@@ -100,7 +92,7 @@ namespace txl
             {
                 if (flags_ & IS_ERROR)
                 {
-                    new(&error_) error_type(std::move(v.error_));
+                    new(&error_) ErrorType(std::move(v.error_));
                 }
                 else
                 {
@@ -110,7 +102,8 @@ namespace txl
         }
     public:
         using value_type = Value;
-        using error_context_type = ErrorContext;
+        using error_type = ErrorType;
+        using exception_type = ExceptionType;
 
         result()
         {
@@ -136,7 +129,7 @@ namespace txl
         {
         }
 
-        result(error_type const & err)
+        result(ErrorType const & err)
             : error_(err)
             , flags_(ASSIGNED | IS_ERROR)
         {
@@ -173,7 +166,7 @@ namespace txl
 
             if (flags_ & IS_ERROR)
             {
-                error_.~error_type();
+                error_.~ErrorType();
             }
             else
             {
@@ -203,7 +196,7 @@ namespace txl
         auto is_error() const -> bool { return flags_ & IS_ERROR; }
         auto is_error(int err_code) const -> bool { return is_error() and error().value() == err_code; }
         auto value() const -> Value const & { return value_; }
-        auto error() const -> error_type const & { return error_; }
+        auto error() const -> ErrorType const & { return error_; }
 
         auto assign_using() -> Value &
         {
@@ -212,7 +205,7 @@ namespace txl
         }
         
         template<class ValueOrFunc>
-        auto ignore(error_type const & err, ValueOrFunc && value_or_func) -> result
+        auto ignore(ErrorType const & err, ValueOrFunc && value_or_func) -> result
         {
             if (is_error() and error() == err)
             {
@@ -229,7 +222,21 @@ namespace txl
             }
             return *this;
         }
-
+        
+        template<class Exception, class... ExArgs>
+        auto or_throw(ExArgs && ... ex_args) -> Value &&
+        {
+            if (not is_assigned())
+            {
+                throw empty_result_error{"result is empty"};
+            }
+            if (not is_error())
+            {
+                return release();
+            }
+            throw Exception{std::forward<ExArgs>(ex_args)...};
+        }
+        
         auto or_throw() -> Value &&
         {
             if (not is_assigned())
@@ -240,7 +247,7 @@ namespace txl
             {
                 return release();
             }
-            throw typename ErrorContext::exception_type{error()};
+            throw ExceptionType{error()};
         }
 
         auto or_value(Value && v) -> Value &&
@@ -267,7 +274,7 @@ namespace txl
             return std::move(value_);
         }
 
-        auto then(std::function<result<Value, ErrorContext>()> cont) -> result<Value, ErrorContext> &
+        auto then(std::function<result()> cont) -> result &
         {
             // Only runs if result is NOT an error
             if (is_assigned() and not is_error())
@@ -278,7 +285,7 @@ namespace txl
         }
 
         template<class Func, class ReturnType = typename std::invoke_result_t<Func, Value>>
-        auto with(Func && cont) -> result<ReturnType, ErrorContext>
+        auto with(Func && cont) -> result<ReturnType, ErrorType, ExceptionType>
         {
             if (is_assigned() and not is_error())
             {
@@ -288,17 +295,19 @@ namespace txl
         }
     };
     
-    template<class ErrorContext>
-    class result<void, ErrorContext> final
+    template<class ErrorType, class ExceptionType>
+    class result<void, ErrorType, ExceptionType> final
     {
     private:
-        using error_type = typename ErrorContext::error_type;
-
-        error_type error_{};
+        std::optional<ErrorType> error_{};
     public:
+        using value_type = void;
+        using error_type = ErrorType;
+        using exception_type = ExceptionType;
+
         result() = default;
 
-        result(error_type const & err)
+        result(ErrorType const & err)
             : error_(err)
         {
         }
@@ -321,12 +330,12 @@ namespace txl
 
         operator bool() const { return not is_error(); } 
 
-        auto is_assigned() const -> bool { return static_cast<bool>(error_); }
+        auto is_assigned() const -> bool { return error_.has_value(); }
         auto empty() const -> bool { return not is_assigned(); }
-        auto is_error() const -> bool { return static_cast<bool>(error_); }
-        auto error() const -> error_type const & { return error_; }
+        auto is_error() const -> bool { return is_assigned(); }
+        auto error() const -> ErrorType const & { return *error_; }
 
-        auto ignore(error_type const & err) -> result
+        auto ignore(ErrorType const & err) -> result
         {
             if (is_error() and error() == err)
             {
@@ -334,12 +343,21 @@ namespace txl
             }
             return *this;
         }
+        
+        template<class Exception, class... ExArgs>
+        auto or_throw(ExArgs && ... ex_args) -> void
+        {
+            if (is_error())
+            {
+                throw Exception{std::forward<ExArgs>(ex_args)...};
+            }
+        }
 
         auto or_throw() -> void
         {
             if (is_error())
             {
-                throw typename ErrorContext::exception_type{error()};
+                throw ExceptionType{error()};
             }
         }
 
@@ -354,8 +372,8 @@ namespace txl
         }
     };
 
-    template<class T, class E>
-    inline auto operator<<(std::ostream & os, result<T, E> const & res) -> std::ostream &
+    template<class T, class E, class X>
+    inline auto operator<<(std::ostream & os, result<T, E, X> const & res) -> std::ostream &
     {
         if (not res.is_assigned())
         {
@@ -367,7 +385,14 @@ namespace txl
             os << "{error=" << res.error() << "}";
             return os;
         }
-        os << "{result=" << res.value() << "}";
+        if constexpr (std::is_same_v<T, void>)
+        {
+            os << "{void}";
+        }
+        else
+        {
+            os << "{result=" << res.value() << "}";
+        }
         return os;
     }
 }

@@ -18,14 +18,8 @@ namespace txl
         unknown,
     };
 
-    struct conversion_error_context
-    {
-        using error_type = conversion_error;
-        using exception_type = result_error<conversion_error>;
-    };
-
     template<class T>
-    using convert_result = result<T, conversion_error_context>;
+    using convert_result = result<T, conversion_error, result_error<conversion_error>>;
     
     struct octet_string_view : std::string_view
     {

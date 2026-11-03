@@ -52,14 +52,8 @@ namespace txl
         octal_decode_error,
     };
 
-    struct tar_error_context
-    {
-        using error_type = tar_error_code;
-        using exception_type = result_error<tar_error_code>;
-    };
-
     template<class T>
-    using tar_result = result<T, tar_error_context>;
+    using tar_result = result<T, tar_error_code, result_error<tar_error_code>>;
 
     class tar_data_reader final : public reader
     {
